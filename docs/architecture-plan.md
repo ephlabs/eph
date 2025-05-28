@@ -61,47 +61,63 @@ Eph is not designed for:
 
 The Eph system follows an event-driven architecture with clear separation of concerns between components. At its heart, the system consists of an API Gateway that receives webhook events from Git providers, an Event Processor that validates and queues these events, and an Environment Orchestrator that coordinates the actual provisioning of resources.
 
+The following diagram illustrates the architecture of Eph, highlighting the separation between the 'Untrusted Environment' and the 'Trusted Environment - ephd Daemon'. The 'Untrusted Environment' includes components like the CLI and Web UI, which interact with the system via HTTPS but do not have direct access to infrastructure or sensitive resources. The 'Trusted Environment - ephd Daemon' encompasses the core engine, provider interface, and supporting services, which handle all privileged operations securely within controlled boundaries.
+
 ```mermaid
 graph TB
+    subgraph "Untrusted Environment"
+        CLI[eph CLI]
+        WebUI[Web Browser UI]
+    end
+
     subgraph "Event Sources"
         GH[GitHub Webhooks]
         GL[GitLab Webhooks]
         API[Direct API Calls]
     end
     
-    subgraph "Core Engine"
-        Gateway[API Gateway]
-        Events[Event Processor]
-        Orchestrator[Environment Orchestrator]
-        State[State Store<br/>PostgreSQL]
+    subgraph "Trusted Environment - ephd Daemon"
+        RestAPI[REST API Server]
         
-        Gateway --> Events
-        Events --> Orchestrator
-        Orchestrator <--> State
-    end
-    
-    subgraph "Provider Interface"
-        ProviderAPI[Provider gRPC API]
-        
-        subgraph "Provider Processes"
-            K8sProvider[Kubernetes Provider<br/>Separate Process]
-            DockerProvider[Docker Provider<br/>Separate Process]
-            CloudProviders[Cloud Providers<br/>ECS, Cloud Run, etc.]
+        subgraph "Core Engine"
+            Gateway[API Gateway]
+            Events[Event Processor]
+            Orchestrator[Environment Orchestrator]
+            State[State Store<br/>PostgreSQL]
+            
+            Gateway --> Events
+            Events --> Orchestrator
+            Orchestrator <--> State
         end
         
-        Orchestrator <--> ProviderAPI
-        ProviderAPI <--> K8sProvider
-        ProviderAPI <--> DockerProvider
-        ProviderAPI <--> CloudProviders
+        subgraph "Provider Interface"
+            ProviderAPI[Provider gRPC API]
+            
+            subgraph "Provider Processes"
+                K8sProvider[Kubernetes Provider<br/>Separate Process]
+                DockerProvider[Docker Provider<br/>Separate Process]
+                CloudProviders[Cloud Providers<br/>ECS, Cloud Run, etc.]
+            end
+            
+            Orchestrator <--> ProviderAPI
+            ProviderAPI <--> K8sProvider
+            ProviderAPI <--> DockerProvider
+            ProviderAPI <--> CloudProviders
+        end
+        
+        subgraph "Supporting Services"
+            DNS[DNS Service]
+            Auth[Auth Service]
+            Metrics[Metrics Collector]
+            Secrets[Secrets Manager]
+        end
+        
+        RestAPI --> Gateway
+        RestAPI --> Orchestrator
     end
     
-    subgraph "Supporting Services"
-        DNS[DNS Service]
-        Auth[Auth Service]
-        Metrics[Metrics Collector]
-        Secrets[Secrets Manager]
-    end
-    
+    CLI -- "HTTPS" --> RestAPI
+    WebUI -- "HTTPS" --> RestAPI
     GH --> Gateway
     GL --> Gateway
     API --> Gateway
@@ -112,15 +128,51 @@ graph TB
     Orchestrator --> Secrets
 ```
 
+**Important**: The eph CLI is a pure API client with zero direct access to infrastructure, databases, or providers. All operations flow through the ephd REST API.
+
 ### Event Processing Flow
 
 When a developer creates a pull request with the appropriate label (e.g., "preview"), the Git provider sends a webhook to Eph's API Gateway. The Event Processor validates the webhook signature, extracts relevant information, and creates an environment provisioning job. This job enters a queue for processing by the Environment Orchestrator.
 
 The Orchestrator reads the project's `eph.yaml` configuration file from the repository to understand what type of environment to create. It then communicates with the appropriate provider plugin via gRPC to provision the actual resources. Throughout this process, the Orchestrator updates the environment state in PostgreSQL and can send status updates back to the Git provider as PR comments.
 
+## REST API Design
+
+### API-First Architecture
+
+Eph follows an API-first design where the ephd daemon exposes a comprehensive REST API that serves as the **single source of truth** for all operations.
+
+#### Core API Endpoints
+
+**Environment Management**:
+- `POST /api/v1/environments` - Create environment
+- `GET /api/v1/environments` - List environments  
+- `GET /api/v1/environments/{id}` - Get environment details
+- `DELETE /api/v1/environments/{id}` - Destroy environment
+- `PUT /api/v1/environments/{id}/scale` - Scale environment
+
+**Monitoring and Logs**:
+- `GET /api/v1/environments/{id}/status` - Real-time status
+- `GET /api/v1/environments/{id}/logs` - Stream logs
+- `GET /api/v1/environments/{id}/metrics` - Resource metrics
+
+**Configuration and Auth**:
+- `POST /api/v1/auth/login` - Authentication
+- `GET /api/v1/config/validate` - Validate eph.yaml
+- `GET /api/v1/providers/capabilities` - Available providers
+
+#### API Security
+- All endpoints require authentication
+- Rate limiting per user/token
+- Request/response logging for audit
+- Input validation and sanitization
+- CORS policies for web dashboard access
+
 ### Provider Plugin Architecture
 
 The provider plugin system is the core of Eph's extensibility. Each provider runs as a separate process and communicates with the core system via gRPC. This design offers several advantages over traditional in-process plugins: providers can be written in any language that supports gRPC, they can't crash the core system, and they can be developed and versioned independently.
+
+**Security Note**: Provider plugins run exclusively within the ephd daemon process or as trusted gRPC services. The eph CLI never directly communicates with providers - all provider operations are mediated by the ephd API layer.
 
 The gRPC interface defines a standard set of operations that all providers must implement:
 
@@ -242,6 +294,26 @@ Eph implements security at multiple levels while maintaining developer-friendly 
 
 **API Authentication**: The system uses token-based authentication for all API calls. Developers generate personal access tokens through the web UI, which are then stored securely in their local configuration. Every CLI and API request must include a valid bearer token. The MVP implements simple token validation with basic scoping (read, write, admin), with plans to add OAuth2/OIDC support in later phases.
 
+#### Client Authentication and Authorization
+
+**Token-Based Authentication**: 
+- Developers authenticate via personal access tokens or OAuth flows
+- Tokens are issued and managed by ephd daemon
+- CLI stores tokens locally (encrypted at rest)
+- All API requests include Bearer token authentication
+
+**Zero Trust Architecture**:
+- CLI clients are considered untrusted and have no privileged access
+- All authorization decisions made server-side by ephd
+- No sensitive operations can be performed without server validation
+- Audit logging captures all API calls with user identity
+
+**Token Management**:
+- `eph auth login` - Interactive OAuth or token setup
+- `eph auth logout` - Clear local token storage  
+- `eph auth status` - Show current authentication state
+- Automatic token refresh for long-lived sessions
+
 **URL Enumeration Prevention**: Rather than using predictable URLs like `app-pr-123`, Eph generates human-readable but non-guessable identifiers using a combination of adjectives, nouns, and numbers (e.g., `app-serene-ocean-42`). This approach, inspired by Heroku and similar platforms, prevents unauthorized discovery of environments while remaining memorable and shareable. The system maintains internal mappings between PR numbers and generated names, with optional redirects from PR-based aliases for convenience.
 
 **Environment Access Control**: By default, environments are publicly accessible to support common use cases like sharing preview links with designers, product managers, or external stakeholders. For sensitive environments, developers can enable protection through their `eph.yaml` configuration:
@@ -253,9 +325,45 @@ Eph implements security at multiple levels while maintaining developer-friendly 
 
 **Resource Isolation**: Each environment runs in its own Kubernetes namespace with appropriate RBAC policies, network policies, and resource quotas. This ensures environments cannot interfere with each other or exceed their allocated resources.
 
+### Trust Boundary Architecture
+
+Eph operates on a **zero-trust client** model similar to kubectl/Kubernetes or docker/dockerd:
+
+**Trusted Components (ephd daemon)**:
+- Runs on trusted infrastructure (cluster, server, cloud)
+- Direct database access (PostgreSQL)
+- Provider operations (Kubernetes, Docker, etc.)
+- Environment orchestration and business logic
+- Webhook handling from Git providers
+- Secrets and credentials management
+- Configuration authority for eph.yaml files
+
+**Untrusted Components (eph CLI)**:
+- Runs on developer laptops and workstations
+- **Zero database access**
+- **Zero direct infrastructure access** 
+- **Zero business logic**
+- Pure API client that calls ephd REST endpoints
+- Local token storage and user preferences only
+
+**Communication**: All client-server communication via authenticated REST API over HTTPS.
+
 ## Configuration Schema
 
 Projects define their ephemeral environment requirements in an `eph.yaml` file at the repository root. This file describes triggers, resource requirements, and provider-specific configuration.
+
+#### Configuration Authority
+
+**Server Authority**: The ephd daemon is authoritative for all eph.yaml configurations:
+- Validates configuration syntax and permissions
+- Applies security policies and resource limits  
+- Resolves environment variables and secrets
+- Enforces organizational constraints
+
+**Client Role**: The eph CLI may cache configuration for user experience:
+- Local preferences and defaults
+- Recently used configurations for faster commands
+- **Never** authoritative - always defers to server validation
 
 ```yaml
 version: "1.0"
@@ -616,6 +724,15 @@ The MVP implements these core capabilities:
 - `eph logs` - Stream logs from an environment
 - `eph exec` - Execute commands in an environment
 - `eph wtf` - Diagnostic command that shows detailed status and common issues
+
+**CLI Command Implementation**: All eph commands are API clients:
+- `eph up` → `POST /api/v1/environments`
+- `eph down {env}` → `DELETE /api/v1/environments/{env}`  
+- `eph list` → `GET /api/v1/environments`
+- `eph logs {env}` → `GET /api/v1/environments/{env}/logs`
+- `eph status {env}` → `GET /api/v1/environments/{env}/status`
+
+The CLI provides user-friendly interfaces and output formatting but contains zero business logic.
 
 **Web Dashboard**: A basic web interface shows all active environments, their status, resource usage, and recent events. Developers can view logs, destroy environments, see configuration details, and generate personal access tokens for CLI authentication.
 
