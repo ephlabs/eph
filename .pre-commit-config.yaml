@@ -6,10 +6,8 @@ repos:
       - id: go-imports
         args: [-local=github.com/ephlabs/eph]
       - id: go-mod-tidy
-      # go-vet disabled - runs on individual files which breaks with unexported vars
-      # - id: go-vet
-      # golangci-lint disabled - runs on individual files which breaks with unexported vars
-      # - id: golangci-lint
+      - id: go-vet-mod
+      - id: golangci-lint
       - id: go-test-mod
         args: [-timeout=30s, -short]
 
