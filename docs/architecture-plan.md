@@ -130,6 +130,168 @@ graph TB
 
 **Important**: The eph CLI is a pure API client with zero direct access to infrastructure, databases, or providers. All operations flow through the ephd REST API.
 
+## Go Project Structure and Code Organization
+
+Eph follows idiomatic Go project structure patterns established by the Go community and used by popular projects like Kubernetes, Hugo, and Docker CLI.
+
+### Directory Layout
+
+```
+eph/
+├── go.mod
+├── cmd/                    # Binary entry points (thin wrappers only)
+│   ├── eph/
+│   │   └── main.go        # CLI binary: import internal/cli; cli.Execute()
+│   └── ephd/
+│       └── main.go        # Daemon binary: import internal/server; server.Run()
+├── internal/              # Private application code (compiler enforced)
+│   ├── server/            # HTTP server implementation
+│   │   ├── server.go      # Core server logic
+│   │   ├── handlers.go    # HTTP handlers
+│   │   ├── middleware.go  # HTTP middleware
+│   │   └── *_test.go      # Server tests
+│   ├── cli/               # CLI command implementation
+│   │   ├── root.go        # Root Cobra command
+│   │   ├── version.go     # Version command
+│   │   ├── wtf.go         # Diagnostic command
+│   │   └── *_test.go      # CLI tests
+│   ├── api/               # API client/server shared code
+│   │   ├── client.go      # HTTP client for eph CLI
+│   │   ├── types.go       # Shared API types
+│   │   └── *_test.go      # API tests
+│   ├── config/            # Configuration parsing and validation
+│   ├── controller/        # Environment orchestration logic
+│   ├── providers/         # Provider implementations
+│   │   ├── interface.go   # Provider interface
+│   │   └── kubernetes/    # Kubernetes provider
+│   ├── state/             # Database state management
+│   ├── webhook/           # Git webhook handlers
+│   └── worker/            # Background job processing
+├── pkg/                   # Exportable packages (use sparingly)
+│   └── version/           # Version information
+└── api/                   # API definitions and documentation
+    ├── openapi.yaml       # OpenAPI specification
+    └── schemas/           # JSON schemas
+```
+
+### Package Responsibilities
+
+**`cmd/` packages**:
+- Contain only minimal main functions
+- Import and invoke code from `internal/` packages
+- Handle command-line argument parsing specific to each binary
+- Should not contain business logic or be directly testable
+
+**`internal/` packages**:
+- Contains all application business logic
+- Cannot be imported by external projects (compiler enforced)
+- Fully testable with unit and integration tests
+- Shared between multiple binaries in the same project
+
+**`pkg/` packages**:
+- Exportable packages safe for external use
+- Use sparingly - most code should be in `internal/`
+- Must maintain backward compatibility
+- Should be genuinely reusable across projects
+
+### Implementation Examples
+
+**Minimal cmd/ephd/main.go**:
+```go
+package main
+
+import (
+    "log"
+    "github.com/ephlabs/eph/internal/server"
+)
+
+func main() {
+    if err := server.Run(); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+**Real logic in internal/server/server.go**:
+```go
+package server
+
+import (
+    "context"
+    "net/http"
+    "github.com/ephlabs/eph/internal/config"
+    "github.com/ephlabs/eph/internal/controller"
+)
+
+type Server struct {
+    config     *config.Config
+    controller *controller.Controller
+    httpServer *http.Server
+}
+
+func Run() error {
+    cfg, err := config.Load()
+    if err != nil {
+        return err
+    }
+    
+    s := &Server{
+        config:     cfg,
+        controller: controller.New(cfg),
+    }
+    
+    return s.Start()
+}
+
+func (s *Server) Start() error {
+    mux := s.setupRoutes()
+    s.httpServer = &http.Server{
+        Addr:    s.config.ServerAddr,
+        Handler: mux,
+    }
+    
+    return s.httpServer.ListenAndServe()
+}
+```
+
+### Testing Strategy
+
+The structure enables comprehensive testing:
+
+```bash
+# Test all business logic
+go test ./internal/...
+
+# Test specific packages
+go test ./internal/server/
+go test ./internal/cli/
+
+# Build binaries
+go build ./cmd/eph
+go build ./cmd/ephd
+
+# Integration tests
+go test ./internal/server/ -tags=integration
+```
+
+### Benefits of This Structure
+
+1. **Separation of Concerns**: Clear boundaries between binary entry points and business logic
+2. **Testability**: All business logic is in testable packages
+3. **Reusability**: `internal/` packages can be shared between `eph` and `ephd`
+4. **Import Safety**: `internal/` prevents external dependencies on private code
+5. **Standard Tooling**: Works seamlessly with Go build tools and IDEs
+6. **Community Familiarity**: Follows patterns used by major Go projects
+
+### Anti-Patterns to Avoid
+
+- **Business logic in `cmd/`**: Keep main functions minimal
+- **Overusing `pkg/`**: Most code should be internal unless truly reusable
+- **Deep package nesting**: Prefer flat structure within `internal/`
+- **Circular dependencies**: Use interfaces to break cycles between packages
+
+This structure provides a solid foundation for implementing the Eph system while maintaining Go best practices and enabling effective testing and maintenance.
+
 ### Event Processing Flow
 
 When a developer creates a pull request with the appropriate label (e.g., "preview"), the Git provider sends a webhook to Eph's API Gateway. The Event Processor validates the webhook signature, extracts relevant information, and creates an environment provisioning job. This job enters a queue for processing by the Environment Orchestrator.
@@ -791,6 +953,15 @@ sequenceDiagram
     Dev->>Dev: Click URL to access environment
 ```
 
+This implementation flow maps directly to the Go package structure described earlier:
+- Webhook handling in `internal/webhook`
+- Configuration parsing in `internal/config`
+- Kubernetes operations in `internal/providers/kubernetes`
+- State management in `internal/state`
+- DNS operations handled by provider plugins
+
+Each component focuses on its specific responsibility while communicating through well-defined interfaces.
+
 ### MVP Code Structure
 
 The MVP follows a clean architecture pattern with clear separation between layers:
@@ -813,6 +984,17 @@ eph/
 ├── configs/          # Example configurations
 └── docs/             # Documentation
 ```
+
+### MVP Code Structure
+
+The MVP follows the idiomatic Go project structure described in the "Go Project Structure and Code Organization" section above. This structure provides:
+
+1. Clean separation between API handlers, business logic, and infrastructure code
+2. Proper testability of all core components
+3. Clear boundaries between the CLI client and server daemon
+4. Adherence to Go community standards for package organization
+
+The web dashboard (React application) and documentation exist alongside the Go code but follow their own best practices for organization.
 
 ### Dogfooding Strategy
 
