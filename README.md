@@ -43,35 +43,50 @@ graph LR
 
 ```mermaid
 graph TB
+    subgraph "Untrusted Environment"
+        CLI[eph CLI]
+        WebUI[Web Browser UI]
+    end
+
     subgraph "Event Sources"
         GH[GitHub Webhooks]
         GL[GitLab Webhooks]
         API[Direct API Calls]
     end
 
-    subgraph "Core Engine"
-        Gateway[API Gateway]
-        Events[Event Processor]
-        Orchestrator[Environment Orchestrator]
-        State[State Store<br/>PostgreSQL]
+    subgraph "Trusted Environment - ephd Daemon"
+        RestAPI[REST API Server]
+
+        subgraph "Core Engine"
+            Gateway[API Gateway]
+            Events[Event Processor]
+            Orchestrator[Environment Orchestrator]
+            State[State Store<br/>PostgreSQL]
+        end
+
+        subgraph "Provider Interface"
+            ProviderAPI[Provider gRPC API]
+            K8s[Kubernetes Provider]
+            Docker[Docker Provider]
+            Cloud[Cloud Providers<br/>ECS, Cloud Run, etc.]
+        end
     end
 
-    subgraph "Provider Plugins"
-        K8s[Kubernetes Provider]
-        Docker[Docker Provider]
-        Cloud[Cloud Providers<br/>ECS, Cloud Run, etc.]
-    end
-
+    CLI -- "HTTPS" --> RestAPI
+    WebUI -- "HTTPS" --> RestAPI
     GH --> Gateway
     GL --> Gateway
     API --> Gateway
     Gateway --> Events
     Events --> Orchestrator
     Orchestrator <--> State
-    Orchestrator <--> K8s
-    Orchestrator <--> Docker
-    Orchestrator <--> Cloud
+    Orchestrator <--> ProviderAPI
+    ProviderAPI <--> K8s
+    ProviderAPI <--> Docker
+    ProviderAPI <--> Cloud
 ```
+
+**Important**: The eph CLI is a pure API client with zero direct access to infrastructure, databases, or providers. All operations flow through the ephd REST API.
 
 ## Configuration (Target State)
 
@@ -114,6 +129,51 @@ database:
 
 **🚧 Pre-MVP** - Architecture planning complete, implementation starting
 
+## Project Structure
+
+Following idiomatic Go project structure with clear separation between API clients and server logic:
+
+```
+eph/
+├── go.mod
+├── cmd/                    # Binary entry points (thin wrappers only)
+│   ├── eph/
+│   │   └── main.go        # CLI binary: import internal/cli; cli.Execute()
+│   └── ephd/
+│       └── main.go        # Daemon binary: import internal/server; server.Run()
+├── internal/              # Private application code (compiler enforced)
+│   ├── server/            # HTTP server implementation
+│   ├── cli/               # CLI command implementation
+│   ├── api/               # API client/server shared code
+│   ├── config/            # Configuration parsing and validation
+│   ├── controller/        # Environment orchestration logic
+│   ├── providers/         # Provider implementations
+│   │   ├── interface.go   # Provider interface
+│   │   └── kubernetes/    # Kubernetes provider
+│   ├── state/             # Database state management
+│   ├── webhook/           # Git webhook handlers
+│   └── worker/            # Background job processing
+├── pkg/                   # Exportable packages (use sparingly)
+│   └── version/           # Version information
+├── web/                   # React dashboard
+├── api/                   # API definitions and documentation
+│   ├── openapi.yaml       # OpenAPI specification
+│   └── schemas/           # JSON schemas
+└── docs/                  # Documentation
+```
+
+### Package Responsibilities
+
+- **`cmd/` packages**: Minimal main functions that import and invoke `internal/` code
+- **`internal/` packages**: All business logic, fully testable, shared between binaries
+- **`pkg/` packages**: Exportable packages safe for external use (use sparingly)
+
+This structure ensures:
+- Clear separation between CLI client and server daemon
+- All business logic is testable
+- `internal/` prevents external dependencies on private code
+- Follows Go community standards
+
 ## Roadmap
 
 ### MVP (Current Focus)
@@ -149,23 +209,7 @@ database:
 - **gRPC** for provider plugins - Language agnostic, streaming support, process isolation
 - **Event-driven** architecture - Scalable, resilient, auditable
 - **Kubernetes-first** - Most complex target, proves the provider abstraction
-
-## Project Structure
-
-```
-eph/
-├── cmd/
-│   ├── eph/          # CLI commands
-│   └── ephd/         # Server daemon
-├── pkg/
-│   ├── api/          # HTTP API handlers
-│   ├── controller/   # Environment orchestration
-│   ├── providers/    # Provider implementations
-│   ├── state/        # PostgreSQL state management
-│   └── webhook/      # Git webhook handlers
-├── web/              # React dashboard
-└── docs/             # Documentation
-```
+- **Zero-trust client model** - CLI is pure API client, all logic in ephd daemon
 
 ## Development & CI
 
@@ -200,11 +244,17 @@ The `main` branch is protected and requires:
 
 #### Pre-commit Hooks
 Local pre-commit hooks run automatically before each commit:
-- `go fmt` and `go imports`
-- `go mod tidy`
-- `go vet`
-- `golangci-lint` (fast mode)
-- Basic YAML/text validation
+- `go-fmt` - Format Go code
+- `go-imports` - Organize imports (with local package preference)
+- `go-mod-tidy` - Clean up module dependencies
+- `go-vet-mod` - Run Go vet on entire module
+- `golangci-lint-mod` - Run comprehensive linting on entire module
+- `go-test-mod` - Run short tests (30s timeout)
+- `trailing-whitespace` - Remove trailing whitespace
+- `end-of-file-fixer` - Ensure files end with newline
+- `check-yaml` - Validate YAML syntax
+- `check-added-large-files` - Prevent large file commits
+- `check-merge-conflict` - Detect merge conflict markers
 
 To run manually: `pre-commit run --all-files`
 
@@ -212,6 +262,10 @@ To run manually: `pre-commit run --all-files`
 ```bash
 # Run tests
 go test ./...
+
+# Test specific packages
+go test ./internal/server/
+go test ./internal/cli/
 
 # Run linting
 golangci-lint run
