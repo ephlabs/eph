@@ -1,7 +1,8 @@
-version: "2"
+run:
+  timeout: 5m
+  tests: true
 
 linters:
-  default: standard
   enable:
     - bodyclose
     - gocritic
@@ -12,10 +13,6 @@ linters:
     - unconvert
     - unparam
     - whitespace
-
-run:
-  timeout: 5m
-  tests: true
 
 issues:
   max-issues-per-linter: 0
