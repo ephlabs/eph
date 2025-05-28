@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestVersionCommand(t *testing.T) {
@@ -26,7 +28,8 @@ func TestVersionCommand(t *testing.T) {
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, err = io.Copy(&buf, r)
+	require.NoError(t, err)
 	output := buf.String()
 
 	expectedPhrases := []string{"Eph", "Go Version", "Git Commit", "Built"}

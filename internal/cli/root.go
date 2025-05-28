@@ -17,13 +17,13 @@ var rootCmd = &cobra.Command{
 	Use:   "eph",
 	Short: "Ephemeral environment controller - What the eph?",
 	Long: `Eph creates and manages ephemeral environments for your pull requests.
-	
+
 When you need a preview environment, just eph it!
 
 Eph automatically spins up isolated environments when you label your PRs,
 giving every feature branch its own playground. No more "works on my machine"!`,
-	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
 	},
 }
 
@@ -93,21 +93,21 @@ Zsh:
   # If shell completion is not already enabled in your environment,
   # you will need to enable it. You can execute the following once:
   $ echo "autoload -U compinit; compinit" >> ~/.zshrc
-  
+
   # To load completions for each session, execute once:
   $ eph completion zsh > "${fpath[1]}/_eph"
-  
+
   # You will need to start a new shell for this setup to take effect.
 
 Fish:
   $ eph completion fish | source
-  
+
   # To load completions for each session, execute once:
   $ eph completion fish > ~/.config/fish/completions/eph.fish
 
 PowerShell:
   PS> eph completion powershell | Out-String | Invoke-Expression
-  
+
   # To load completions for every new session, run:
   PS> eph completion powershell > eph.ps1
   # and source this file from your PowerShell profile.
@@ -115,16 +115,18 @@ PowerShell:
 	DisableFlagsInUseLine: true,
 	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
 	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		switch args[0] {
 		case "bash":
-			cmd.Root().GenBashCompletion(os.Stdout)
+			return cmd.Root().GenBashCompletion(os.Stdout)
 		case "zsh":
-			cmd.Root().GenZshCompletion(os.Stdout)
+			return cmd.Root().GenZshCompletion(os.Stdout)
 		case "fish":
-			cmd.Root().GenFishCompletion(os.Stdout, true)
+			return cmd.Root().GenFishCompletion(os.Stdout, true)
 		case "powershell":
-			cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+			return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+		default:
+			return fmt.Errorf("unsupported shell: %s", args[0])
 		}
 	},
 }

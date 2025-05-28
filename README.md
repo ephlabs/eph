@@ -41,20 +41,20 @@ graph TB
         GL[GitLab Webhooks]
         API[Direct API Calls]
     end
-    
+
     subgraph "Core Engine"
         Gateway[API Gateway]
         Events[Event Processor]
         Orchestrator[Environment Orchestrator]
         State[State Store<br/>PostgreSQL]
     end
-    
+
     subgraph "Provider Plugins"
         K8s[Kubernetes Provider]
         Docker[Docker Provider]
         Cloud[Cloud Providers<br/>ECS, Cloud Run, etc.]
     end
-    
+
     GH --> Gateway
     GL --> Gateway
     API --> Gateway

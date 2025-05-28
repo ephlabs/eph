@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCompletionCommand(t *testing.T) {
@@ -30,7 +32,8 @@ func TestCompletionCommand(t *testing.T) {
 			os.Stdout = oldStdout
 
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, err = io.Copy(&buf, r)
+			require.NoError(t, err)
 			output := buf.String()
 
 			// Every shell should output some completion code

@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 echo "🔧 Setting up CI tools..."
 
@@ -17,7 +17,7 @@ pre-commit install
 
 # Run initial checks
 echo "🧪 Running initial checks..."
-pre-commit run --all-files || true
+pre-commit run --all-files
 
 echo "✅ CI tools setup complete!"
 echo ""

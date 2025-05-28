@@ -4,16 +4,17 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/ephlabs/eph/pkg/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/ephlabs/eph/pkg/version"
 )
 
 var wtfCmd = &cobra.Command{
 	Use:   "wtf",
 	Short: "Display diagnostic information",
 	Long:  "Displays diagnostic information to help troubleshoot issues with Eph.",
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		fmt.Println("🔍 Eph Diagnostic Information")
 		fmt.Println("============================")
 		fmt.Printf("Eph Version: %s\n", version.GetVersion())

@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestUpCommand(t *testing.T) {
@@ -52,7 +54,8 @@ func TestAuthCommand(t *testing.T) {
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, err = io.Copy(&buf, r)
+	require.NoError(t, err)
 	output := buf.String()
 
 	expectedPhrases := []string{"Commands to manage authentication", "Usage"}
@@ -91,7 +94,8 @@ func runPlaceholderTest(t *testing.T, command string, args []string, expectedPhr
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, err = io.Copy(&buf, r)
+	require.NoError(t, err)
 	output := buf.String()
 
 	for _, phrase := range expectedPhrases {

@@ -56,7 +56,3 @@ func TestGlobalFlags(t *testing.T) {
 		t.Errorf("Expected 'debug' flag usage to be 'enable debug logging', got: %s", debugFlag.Usage)
 	}
 }
-
-func contains(s, substr string) bool {
-	return bytes.Contains([]byte(s), []byte(substr))
-}
