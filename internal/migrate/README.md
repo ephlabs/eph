@@ -1,3 +1,10 @@
-# Placeholder
+# Internal Migration Package
 
-This directory will be used for database migration logic.
+This package handles database migrations for Eph.
+This is internal application code and cannot be imported by external projects.
+
+Contents:
+- Schema migration logic
+- Data migration utilities
+- Version tracking
+- Migration history
