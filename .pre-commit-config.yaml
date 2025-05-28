@@ -7,12 +7,12 @@ repos:
         args: [-local=github.com/ephlabs/eph]
       - id: go-mod-tidy
       - id: go-vet-mod
-      - id: golangci-lint
+      - id: golangci-lint-mod
       - id: go-test-mod
         args: [-timeout=30s, -short]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
