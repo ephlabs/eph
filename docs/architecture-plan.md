@@ -61,6 +61,8 @@ Eph is not designed for:
 
 The Eph system follows an event-driven architecture with clear separation of concerns between components. At its heart, the system consists of an API Gateway that receives webhook events from Git providers, an Event Processor that validates and queues these events, and an Environment Orchestrator that coordinates the actual provisioning of resources.
 
+The following diagram illustrates the architecture of Eph, highlighting the separation between the 'Untrusted Environment' and the 'Trusted Environment - ephd Daemon'. The 'Untrusted Environment' includes components like the CLI and Web UI, which interact with the system via HTTPS but do not have direct access to infrastructure or sensitive resources. The 'Trusted Environment - ephd Daemon' encompasses the core engine, provider interface, and supporting services, which handle all privileged operations securely within controlled boundaries.
+
 ```mermaid
 graph TB
     subgraph "Untrusted Environment"
