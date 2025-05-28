@@ -143,6 +143,11 @@ jobs:
     name: Integration Tests
     runs-on: ubuntu-latest
     needs: [build]
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
     services:
       postgres:
         image: postgres:16-alpine
@@ -165,7 +170,7 @@ jobs:
       - name: Download ephd binary
         uses: actions/download-artifact@v4
         with:
-          name: binaries-${{ runner.os }}-${{ env.ARCH }}
+          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
           path: bin/
 
       - name: Make binaries executable
@@ -175,7 +180,7 @@ jobs:
         env:
           DATABASE_URL: postgres://eph_test:eph_test@localhost:5432/eph_test?sslmode=disable
         run: |
-          ./bin/ephd-linux-amd64 migrate up
+          ./bin/ephd-${{ matrix.goos }}-${{ matrix.goarch }} migrate up
 
       - name: Start ephd daemon
         env:
@@ -184,7 +189,7 @@ jobs:
           LOG_LEVEL: debug
           SERVER_ADDR: :8080
         run: |
-          ./bin/ephd-linux-amd64 serve &
+          ./bin/ephd-${{ matrix.goos }}-${{ matrix.goarch }} serve &
           echo $! > ephd.pid
 
           # Wait for server to be ready
@@ -207,10 +212,10 @@ jobs:
           EPH_API_URL: http://localhost:8080
         run: |
           # Test CLI version command
-          ./bin/eph-linux-amd64 version
+          ./bin/eph-${{ matrix.goos }}-${{ matrix.goarch }} version
 
           # Test CLI without auth (should fail gracefully)
-          ./bin/eph-linux-amd64 list || true
+          ./bin/eph-${{ matrix.goos }}-${{ matrix.goarch }} list || true
 
       - name: Stop ephd daemon
         if: always()
