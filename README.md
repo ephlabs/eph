@@ -1,5 +1,12 @@
 # Eph 🌊
 
+[![CI Status](https://github.com/ephlabs/eph/actions/workflows/ci.yml/badge.svg)](https://github.com/ephlabs/eph/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/badge/Go-1.24.3-00ADD8?style=flat&logo=go)](https://go.dev)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+[![gRPC](https://img.shields.io/badge/gRPC-Provider%20Plugins-00ADD8?style=flat&logo=grpc)](https://grpc.io)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%2B-316192?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org)
+
 > *Ephemeral environments that make you say "What the eph?"*
 
 Eph is an open-source ephemeral environment controller that automatically creates, manages, and destroys temporary preview environments for pull requests. Get a full, isolated environment with every PR - complete with its own URL, database, and resources.
