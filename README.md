@@ -41,20 +41,20 @@ graph TB
         GL[GitLab Webhooks]
         API[Direct API Calls]
     end
-    
+
     subgraph "Core Engine"
         Gateway[API Gateway]
         Events[Event Processor]
         Orchestrator[Environment Orchestrator]
         State[State Store<br/>PostgreSQL]
     end
-    
+
     subgraph "Provider Plugins"
         K8s[Kubernetes Provider]
         Docker[Docker Provider]
         Cloud[Cloud Providers<br/>ECS, Cloud Run, etc.]
     end
-    
+
     GH --> Gateway
     GL --> Gateway
     API --> Gateway
@@ -158,6 +158,60 @@ eph/
 │   └── webhook/      # Git webhook handlers
 ├── web/              # React dashboard
 └── docs/             # Documentation
+```
+
+## Development & CI
+
+### Prerequisites
+- Go 1.24.3+
+- PostgreSQL 16+
+- golangci-lint (for linting)
+- pre-commit (for local development hooks)
+
+### Setting Up Local Development
+1. Clone the repository
+2. Run the CI setup script:
+   ```bash
+   ./scripts/setup-ci.sh
+   ```
+   This installs required tools and sets up pre-commit hooks.
+
+### CI/CD Pipeline
+Our continuous integration runs on every push to `main` and all pull requests:
+
+- **Linting**: golangci-lint with comprehensive rules
+- **Testing**: Unit tests with PostgreSQL integration
+- **Building**: Cross-platform binaries for all major platforms
+- **Security Scanning**: Trivy vulnerability scanner and gosec
+- **Integration Tests**: End-to-end testing with ephd daemon
+
+#### Branch Protection
+The `main` branch is protected and requires:
+- All status checks to pass
+- One approved review
+- Branches to be up to date before merging
+
+#### Pre-commit Hooks
+Local pre-commit hooks run automatically before each commit:
+- `go fmt` and `go imports`
+- `go mod tidy`
+- `go vet`
+- `golangci-lint` (fast mode)
+- Basic YAML/text validation
+
+To run manually: `pre-commit run --all-files`
+
+### Commands
+```bash
+# Run tests
+go test ./...
+
+# Run linting
+golangci-lint run
+
+# Build binaries
+go build -o bin/eph ./cmd/eph
+go build -o bin/ephd ./cmd/ephd
 ```
 
 ## Getting Started

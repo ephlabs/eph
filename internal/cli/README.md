@@ -7,4 +7,4 @@ Contents:
 - Root CLI command
 - Command structure and hierarchy
 - Flag handling
-- User interaction utilities 
+- User interaction utilities

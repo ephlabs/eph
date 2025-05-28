@@ -75,53 +75,53 @@ graph TB
         GL[GitLab Webhooks]
         API[Direct API Calls]
     end
-    
+
     subgraph "Trusted Environment - ephd Daemon"
         RestAPI[REST API Server]
-        
+
         subgraph "Core Engine"
             Gateway[API Gateway]
             Events[Event Processor]
             Orchestrator[Environment Orchestrator]
             State[State Store<br/>PostgreSQL]
-            
+
             Gateway --> Events
             Events --> Orchestrator
             Orchestrator <--> State
         end
-        
+
         subgraph "Provider Interface"
             ProviderAPI[Provider gRPC API]
-            
+
             subgraph "Provider Processes"
                 K8sProvider[Kubernetes Provider<br/>Separate Process]
                 DockerProvider[Docker Provider<br/>Separate Process]
                 CloudProviders[Cloud Providers<br/>ECS, Cloud Run, etc.]
             end
-            
+
             Orchestrator <--> ProviderAPI
             ProviderAPI <--> K8sProvider
             ProviderAPI <--> DockerProvider
             ProviderAPI <--> CloudProviders
         end
-        
+
         subgraph "Supporting Services"
             DNS[DNS Service]
             Auth[Auth Service]
             Metrics[Metrics Collector]
             Secrets[Secrets Manager]
         end
-        
+
         RestAPI --> Gateway
         RestAPI --> Orchestrator
     end
-    
+
     CLI -- "HTTPS" --> RestAPI
     WebUI -- "HTTPS" --> RestAPI
     GH --> Gateway
     GL --> Gateway
     API --> Gateway
-    
+
     Orchestrator --> DNS
     Orchestrator --> Auth
     Orchestrator --> Metrics
@@ -234,12 +234,12 @@ func Run() error {
     if err != nil {
         return err
     }
-    
+
     s := &Server{
         config:     cfg,
         controller: controller.New(cfg),
     }
-    
+
     return s.Start()
 }
 
@@ -249,7 +249,7 @@ func (s *Server) Start() error {
         Addr:    s.config.ServerAddr,
         Handler: mux,
     }
-    
+
     return s.httpServer.ListenAndServe()
 }
 ```
@@ -308,7 +308,7 @@ Eph follows an API-first design where the ephd daemon exposes a comprehensive RE
 
 **Environment Management**:
 - `POST /api/v1/environments` - Create environment
-- `GET /api/v1/environments` - List environments  
+- `GET /api/v1/environments` - List environments
 - `GET /api/v1/environments/{id}` - Get environment details
 - `DELETE /api/v1/environments/{id}` - Destroy environment
 - `PUT /api/v1/environments/{id}/scale` - Scale environment
@@ -347,12 +347,12 @@ service Provider {
   rpc CreateEnvironment(CreateEnvironmentRequest) returns (stream OperationUpdate);
   rpc DestroyEnvironment(DestroyEnvironmentRequest) returns (stream OperationUpdate);
   rpc ScaleEnvironment(ScaleEnvironmentRequest) returns (stream OperationUpdate);
-  
+
   // Status & Monitoring
   rpc GetEnvironmentStatus(GetEnvironmentStatusRequest) returns (EnvironmentStatus);
   rpc StreamLogs(StreamLogsRequest) returns (stream LogEntry);
   rpc GetMetrics(GetMetricsRequest) returns (EnvironmentMetrics);
-  
+
   // Provider Capabilities
   rpc GetCapabilities(Empty) returns (ProviderCapabilities);
   rpc ValidateConfiguration(ValidateConfigurationRequest) returns (ValidationResult);
@@ -404,7 +404,7 @@ erDiagram
         timestamp ttl_expires_at
         string created_by
     }
-    
+
     Service {
         uuid id PK
         uuid environment_id FK
@@ -415,7 +415,7 @@ erDiagram
         string status
         json health_check
     }
-    
+
     Database {
         uuid id PK
         uuid environment_id FK
@@ -426,7 +426,7 @@ erDiagram
         json configuration
         timestamp created_at
     }
-    
+
     DNSRecord {
         uuid id PK
         uuid environment_id FK
@@ -436,7 +436,7 @@ erDiagram
         string provider
         timestamp created_at
     }
-    
+
     EnvironmentEvent ||--o{ Environment : tracks
     EnvironmentEvent {
         uuid id PK
@@ -458,7 +458,7 @@ Eph implements security at multiple levels while maintaining developer-friendly 
 
 #### Client Authentication and Authorization
 
-**Token-Based Authentication**: 
+**Token-Based Authentication**:
 - Developers authenticate via personal access tokens or OAuth flows
 - Tokens are issued and managed by ephd daemon
 - CLI stores tokens locally (encrypted at rest)
@@ -472,7 +472,7 @@ Eph implements security at multiple levels while maintaining developer-friendly 
 
 **Token Management**:
 - `eph auth login` - Interactive OAuth or token setup
-- `eph auth logout` - Clear local token storage  
+- `eph auth logout` - Clear local token storage
 - `eph auth status` - Show current authentication state
 - Automatic token refresh for long-lived sessions
 
@@ -503,7 +503,7 @@ Eph operates on a **zero-trust client** model similar to kubectl/Kubernetes or d
 **Untrusted Components (eph CLI)**:
 - Runs on developer laptops and workstations
 - **Zero database access**
-- **Zero direct infrastructure access** 
+- **Zero direct infrastructure access**
 - **Zero business logic**
 - Pure API client that calls ephd REST endpoints
 - Local token storage and user preferences only
@@ -518,7 +518,7 @@ Projects define their ephemeral environment requirements in an `eph.yaml` file a
 
 **Server Authority**: The ephd daemon is authoritative for all eph.yaml configurations:
 - Validates configuration syntax and permissions
-- Applies security policies and resource limits  
+- Applies security policies and resource limits
 - Resolves environment variables and secrets
 - Enforces organizational constraints
 
@@ -543,11 +543,11 @@ triggers:
     labels: ["preview", "eph:deploy"]
     # Optional: wait for CI to complete
     wait_for_checks: ["build", "test"]
-    
-  # PR comment triggers  
+
+  # PR comment triggers
   - type: pr_comment
     patterns: ["/deploy", "/preview"]
-    
+
   # Automatic triggers for certain branches
   - type: auto
     branches: ["feature/*", "fix/*"]
@@ -559,33 +559,33 @@ environment:
   name_template: "{project}-{words}-{number}"  # e.g., "myapp-serene-ocean-42"
   subdomain_template: "{name}.{base_domain}"
   base_domain: "${EPH_BASE_DOMAIN:-preview.example.com}"
-  
+
   # Human-friendly aliases that redirect to the generated name
   alias_template: "{project}-pr-{pr_number}"  # Optional PR-based redirect
-  
+
   # Lifecycle management
   ttl: 72h  # Total time to live
   idle_timeout: 4h  # Scale down after inactivity
   wake_on_access: true  # Auto-wake scaled environments
-  
+
   # Resource constraints
   resources:
     cpu_request: "100m"
     cpu_limit: "2"
     memory_request: "128Mi"
     memory_limit: "4Gi"
-    
+
   # Environment variables available to all services
   env:
     APP_ENV: "preview"
     FEATURE_FLAGS: "preview-mode"
-    
+
 # Provider-specific configurations
 kubernetes:
   # Target cluster configuration
   context: "${K8S_CONTEXT}"
   namespace_template: "{project}-pr-{pr_number}"
-  
+
   # Manifest sources (applied in order)
   manifests:
     - path: ./k8s/base
@@ -598,17 +598,17 @@ kubernetes:
             - op: replace
               path: /spec/replicas
               value: 1
-              
+
   # Image overrides
   images:
     - name: api-server
       newName: "{registry}/{project}/api"
       newTag: "pr-{pr_number}-{commit_sha:0:7}"
-      
+
   # Image pull configuration
   imagePullSecrets:
     - name: registry-credentials
-    
+
   # Common image tag patterns:
   # PR-based: "pr-{pr_number}"
   # Commit-based: "{commit_sha}" or "{commit_sha:0:7}"
@@ -616,47 +616,47 @@ kubernetes:
   # Branch-based: "{branch_name}-{commit_sha:0:7}"
   #
   # Your CI must push images with these tags BEFORE Eph deploys
-      
+
   # Ingress configuration
   ingress:
     class: nginx
     annotations:
       cert-manager.io/cluster-issuer: letsencrypt-prod
       nginx.ingress.kubernetes.io/proxy-body-size: "10m"
-      
+
 docker-compose:
   # Compose file selection
   compose_files:
     - docker-compose.yml
     - docker-compose.preview.yml
-    
+
   # Environment file
   env_file: .env.preview
-  
+
   # Service scaling overrides
   scale:
     web: 1
     worker: 1
-  
+
   # Note: Eph will use the 'image:' directives from your compose files
   # It will NOT execute 'build:' directives - images must exist
   # Your CI should build and push images before triggering Eph
-    
+
 # Database configuration
 database:
   enabled: true
-  
+
   # Database instances needed
   instances:
     - name: main
       type: postgres
       version: "15"
-      
+
       # Template strategy
       template:
         # Options: "empty", "seed", "snapshot", "branch"
         strategy: seed
-        
+
         # For seed strategy
         seed:
           # SQL scripts to run after creation
@@ -664,19 +664,19 @@ database:
             - ./db/schema.sql
             - ./db/migrations/*.sql
             - ./db/seed-preview.sql
-            
+
         # For snapshot strategy (future)
         # snapshot:
         #   source: "${DB_SNAPSHOT_ID}"
         #   max_age: 7d
-      
+
       # Connection configuration
       connection:
         # Environment variable to inject
         env_var: DATABASE_URL
         # Database name (templated)
         database: "app_pr_{pr_number}"
-        
+
 # Service dependencies
 services:
   # Internal services (Eph manages these)
@@ -684,17 +684,17 @@ services:
     type: internal
     image: redis:7-alpine
     persistent: false
-    
+
   # External services (references to existing systems)
   - name: auth-service
     type: external
     endpoint: "${AUTH_SERVICE_URL:-https://auth.staging.example.com}"
-    
+
 # Secrets management
 secrets:
   # Provider selection
   provider: kubernetes  # or "vault", "aws-secrets-manager"
-  
+
   # Kubernetes secrets
   kubernetes:
     # Copy secrets from source namespace
@@ -702,7 +702,7 @@ secrets:
     secrets:
       - app-secrets
       - database-credentials
-      
+
   # # Vault configuration (alternative)
   # vault:
   #   path: "secret/data/preview/{environment_name}"
@@ -714,47 +714,47 @@ security:
   environment_access:
     # Default access level for all environments
     default: public  # or "protected"
-    
+
     # Protection for specific environments
     protection:
       # Basic auth (simple password protection)
       type: none  # or "basic", "oauth" (future)
-      
+
       # # For basic auth
       # basic_auth:
       #   username: preview
       #   password: "${PREVIEW_PASSWORD}"
-      
+
       # # For OAuth (future)
       # oauth:
       #   provider: github
       #   allowed_orgs: ["mycompany"]
       #   allowed_teams: ["developers"]
-  
+
   # URL generation strategy
   naming:
     # Use readable random names to prevent enumeration
     strategy: readable  # e.g., "serene-ocean-42"
     include_project: true  # Results in "myapp-serene-ocean-42"
-  
-# Networking configuration  
+
+# Networking configuration
 networking:
   # Routing strategy
   routing:
     # Options: "subdomain", "path", "header"
     strategy: subdomain
-    
+
     # For path-based routing
     # path_prefix: "/preview/{name}"
-    
+
     # For header-based routing (advanced)
     # header: "X-Eph-Environment"
-    
+
   # TLS configuration
   tls:
     enabled: true
     provider: cert-manager  # or "letsencrypt", "self-signed"
-    
+
 # Hooks for custom logic
 hooks:
   # Pre-creation hooks (run before environment creation)
@@ -762,24 +762,24 @@ hooks:
     - name: validate-dependencies
       command: ["./scripts/check-deps.sh"]
       timeout: 30s
-      
+
   # Post-creation hooks (run after environment is ready)
   post_create:
     - name: warm-cache
       command: ["./scripts/warm-cache.sh", "${environment_url}"]
       timeout: 5m
-      
+
     - name: run-smoke-tests
       command: ["./scripts/smoke-test.sh", "${environment_url}"]
       timeout: 10m
       continueOnError: true
-      
+
   # Pre-destroy hooks (run before environment destruction)
   pre_destroy:
     - name: backup-data
       command: ["./scripts/backup-preview-data.sh", "{environment_name}"]
       timeout: 5m
-      
+
 # Observability configuration
 observability:
   # Metrics collection
@@ -789,26 +789,26 @@ observability:
     annotations:
       prometheus.io/scrape: "true"
       prometheus.io/port: "9090"
-      
+
   # Distributed tracing
   tracing:
     enabled: true
     # Automatic trace context propagation
     propagate_context: true
-    
+
   # Log aggregation
   logs:
     # Log shipping configuration
     ship_to: "${LOG_DESTINATION:-stdout}"
     include_pod_logs: true
-    
+
 # Advanced features (optional)
 advanced:
   # Multi-region deployment (future)
   # regions:
   #   - us-west-2
   #   - eu-west-1
-  
+
   # Canary deployment support (future)
   # canary:
   #   enabled: true
@@ -850,13 +850,13 @@ sequenceDiagram
     participant Reg as Container Registry
     participant Eph as Eph
     participant K8s as Kubernetes
-    
+
     Dev->>Git: Open PR
     Git->>CI: Trigger build
     CI->>CI: Build & test code
     CI->>Reg: Push image (api:pr-123-abc1234)
     CI->>Git: ✅ Build successful
-    
+
     Dev->>Git: Add 'preview' label
     Git->>Eph: Webhook: PR labeled
     Eph->>Reg: Verify image exists
@@ -889,7 +889,7 @@ The MVP implements these core capabilities:
 
 **CLI Command Implementation**: All eph commands are API clients:
 - `eph up` → `POST /api/v1/environments`
-- `eph down {env}` → `DELETE /api/v1/environments/{env}`  
+- `eph down {env}` → `DELETE /api/v1/environments/{env}`
 - `eph list` → `GET /api/v1/environments`
 - `eph logs {env}` → `GET /api/v1/environments/{env}/logs`
 - `eph status {env}` → `GET /api/v1/environments/{env}/status`
@@ -922,34 +922,34 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant K8s as Kubernetes
     participant DNS as DNS Provider
-    
+
     Dev->>GH: Add 'preview' label to PR
     GH->>Eph: Webhook: Pull request labeled
     Eph->>DB: Store event
     Eph->>GH: Acknowledge webhook
-    
+
     Note over Eph: Background processing begins
-    
+
     Eph->>DB: Claim job (SELECT FOR UPDATE SKIP LOCKED)
     Eph->>GH: Fetch eph.yaml from PR branch
     Eph->>Eph: Validate configuration
     Eph->>Eph: Generate readable environment name
     Eph->>DB: Create environment record
-    
+
     Eph->>K8s: Create namespace
     Eph->>K8s: Create ConfigMaps/Secrets
     Eph->>K8s: Apply manifests
     Eph->>K8s: Wait for deployments ready
-    
+
     K8s-->>Eph: Pods running
-    
+
     Eph->>DNS: Create DNS record
     DNS-->>Eph: Record created
-    
+
     Eph->>DB: Update environment status
     Eph->>GH: Comment with environment URL
     Note over GH: https://myapp-gentle-stream-42.preview.company.com
-    
+
     Dev->>Dev: Click URL to access environment
 ```
 
@@ -1024,7 +1024,7 @@ kubernetes:
   manifests:
     - ./deploy/eph-controller.yaml
     - ./deploy/eph-webhook-handler.yaml
-  
+
 database:
   instances:
     - name: state
@@ -1062,7 +1062,7 @@ kubernetes:
   namespace: "eph-test-{words}-{number}"
   manifests:
     - ./deploy/eph-controller.yaml
-  
+
   # Preview instances get limited credentials
   secrets:
     - name: eph-test-credentials
