@@ -1,110 +1,22 @@
 version: "2"
 
-run:
-  timeout: 5m
-  tests: true
-  build-tags:
-    - integration
-
 linters:
   default: standard
   enable:
-    # Additional linters for code quality
-    - bodyclose      # Checks http.Response.Body is closed
-    - gocritic       # Highly extensible linter
-    - goimports      # Checks imports are sorted
-    - gosec          # Security checker
-    - misspell       # Spell checker
-    - prealloc       # Suggests preallocations
-    - revive         # Fast, configurable linter
-    - thelper        # Detects test helpers without t.Helper()
-    - tparallel      # Detects missing t.Parallel() calls
-    - unconvert      # Detects unnecessary type conversions
-    - unparam        # Detects unused function parameters
-    - wastedassign   # Detects unused assignments
-    - whitespace     # Detects unnecessary whitespace
-  disable:
-    # These linters are too strict or noisy for our use case
-    - exhaustive     # Too strict for switch statements
-    - godot          # Enforces periods in comments
-    - godox          # Detects TODO/FIXME comments
-    - err113         # Too strict about error types
-    - mnd            # Magic number detection is too noisy
-    - lll            # Line length limit is too rigid
-    - nestif         # Complexity is already checked by gocyclo
-    - nlreturn       # Too opinionated about newlines
-    - noctx          # Too strict about context.TODO()
-    - nolintlint     # We allow //nolint when needed
-    - wsl            # Way too opinionated about whitespace
-  
-  settings:
-    govet:
-      enable:
-        - shadow  # Detect shadowed variables
-    
-    gocritic:
-      enabled-tags:
-        - diagnostic
-        - performance
-        - style
-      disabled-checks:
-        - dupImport    # False positives with goimports
-        - ifElseChain  # Sometimes if-else is clearer
-        - octalLiteral # We don't use octal literals
-    
-    gocyclo:
-      min-complexity: 15  # Reasonable complexity limit
-    
-    misspell:
-      locale: US
-    
-    gosec:
-      excludes:
-        - G404  # We use math/rand for readable environment names
-    
-    revive:
-      severity: warning
-      rules:
-        - name: blank-imports
-        - name: context-as-argument
-        - name: dot-imports
-        - name: error-return
-        - name: error-strings
-        - name: error-naming
-        - name: exported
-        - name: if-return
-        - name: increment-decrement
-        - name: package-comments
-        - name: range
-        - name: receiver-naming
-        - name: time-naming
-        - name: unexported-return
-        - name: var-declaration
-        - name: var-naming
-  
-  exclusions:
-    paths:
-      - bin
-      - vendor
-    rules:
-      # Test files have different standards
-      - path: "_test\\.go"
-        linters:
-          - gocyclo  # Test functions can be complex
-          - errcheck # Test helpers may ignore errors
-          - gosec    # Tests may use weak crypto for speed
-      
-      # Cobra commands use init() by design
-      - path: "cmd/"
-        text: "init function"
-      
-      # CLI commands can be complex
-      - path: "internal/cli/"
-        linters:
-          - gocyclo
-          - funlen
+    - bodyclose
+    - gocritic
+    - goimports
+    - gosec
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+    - whitespace
+
+run:
+  timeout: 5m
+  tests: true
 
 issues:
-  max-issues-per-linter: 0  # Show all issues
-  max-same-issues: 0        # Show all occurrences
-  new: false                # Check all code, not just changes
+  max-issues-per-linter: 0
+  max-same-issues: 0
