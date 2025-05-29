@@ -14,7 +14,7 @@ import (
 
 type Server struct {
 	httpServer *http.Server
-	port       string
+	config     *Config
 }
 
 type Config struct {
@@ -37,21 +37,21 @@ func New(cfg *Config) *Server {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
-	return &Server{port: cfg.Port}
+	return &Server{config: cfg}
 }
 
 func (s *Server) Start() error {
 	mux := s.setupRoutes()
 
 	s.httpServer = &http.Server{
-		Addr:         s.port,
+		Addr:         s.config.Port,
 		Handler:      s.applyMiddleware(mux),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  s.config.ReadTimeout,
+		WriteTimeout: s.config.WriteTimeout,
+		IdleTimeout:  s.config.IdleTimeout,
 	}
 
-	log.Printf("Starting Eph daemon on %s", s.port)
+	log.Printf("Starting Eph daemon on %s", s.config.Port)
 	return s.httpServer.ListenAndServe()
 }
 

@@ -122,7 +122,8 @@ func TestEnvironmentIDHandler(t *testing.T) {
 	}{
 		{"DELETE environment", "/api/v1/environments/test-id", "DELETE", http.StatusNotImplemented},
 		{"GET logs", "/api/v1/environments/test-id/logs", "GET", http.StatusNotImplemented},
-		{"Invalid path", "/api/v1/environments/test-id", "GET", http.StatusNotFound},
+		{"GET environment - Method not allowed", "/api/v1/environments/test-id", "GET", http.StatusMethodNotAllowed},
+		{"PUT environment - Method not allowed", "/api/v1/environments/test-id", "PUT", http.StatusMethodNotAllowed},
 	}
 
 	for _, tt := range tests {
@@ -252,15 +253,29 @@ func TestDefaultConfig(t *testing.T) {
 func TestNewServer(t *testing.T) {
 	// Test with nil config
 	server := New(nil)
-	if server.port != ":8080" {
-		t.Errorf("expected default port :8080, got %s", server.port)
+	if server.config.Port != ":8080" {
+		t.Errorf("expected default port :8080, got %s", server.config.Port)
 	}
 
 	// Test with custom config
-	cfg := &Config{Port: ":9090"}
+	cfg := &Config{
+		Port:         ":9090",
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 20 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
 	server = New(cfg)
-	if server.port != ":9090" {
-		t.Errorf("expected custom port :9090, got %s", server.port)
+	if server.config.Port != ":9090" {
+		t.Errorf("expected custom port :9090, got %s", server.config.Port)
+	}
+	if server.config.ReadTimeout != 10*time.Second {
+		t.Errorf("expected custom read timeout 10s, got %v", server.config.ReadTimeout)
+	}
+	if server.config.WriteTimeout != 20*time.Second {
+		t.Errorf("expected custom write timeout 20s, got %v", server.config.WriteTimeout)
+	}
+	if server.config.IdleTimeout != 30*time.Second {
+		t.Errorf("expected custom idle timeout 30s, got %v", server.config.IdleTimeout)
 	}
 }
 

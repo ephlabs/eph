@@ -294,8 +294,8 @@ func TestEnvironmentIDHandlerRouting(t *testing.T) {
 			path:   "/api/v1/environments/env789",
 			method: "POST",
 			check: func(t *testing.T, w *httptest.ResponseRecorder) {
-				if w.Code != http.StatusNotFound {
-					t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
+				if w.Code != http.StatusMethodNotAllowed {
+					t.Errorf("expected status %d, got %d", http.StatusMethodNotAllowed, w.Code)
 				}
 			},
 		},

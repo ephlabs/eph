@@ -106,6 +106,12 @@ func (s *Server) environmentIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// For GET or other methods on a known environment ID (not logs), return 405
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	http.Error(w, "Not found", http.StatusNotFound)
 }
 
