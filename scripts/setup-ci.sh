@@ -7,6 +7,10 @@ echo "🔧 Setting up CI tools..."
 echo "📦 Installing golangci-lint..."
 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
+# Install goimports
+echo "📦 Installing goimports..."
+go install golang.org/x/tools/cmd/goimports@latest
+
 # Install pre-commit
 echo "📦 Installing pre-commit..."
 pip install pre-commit || pip3 install pre-commit
