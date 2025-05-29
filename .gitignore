@@ -33,3 +33,6 @@ go.work.sum
 
 # Binaries
 bin/
+
+# Transients
+_task.md

@@ -1,11 +1,15 @@
 package main
 
 import (
-	"fmt"
-	"os"
+	"log"
+
+	"github.com/ephlabs/eph/internal/server"
 )
 
 func main() {
-	fmt.Println("Eph Daemon - Starting ephemeral environment controller")
-	os.Exit(0)
+	log.Println("Starting Eph Daemon - What the eph?")
+
+	if err := server.Run(); err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
 }
