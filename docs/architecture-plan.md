@@ -138,40 +138,53 @@ Eph follows idiomatic Go project structure patterns established by the Go commun
 
 ```
 eph/
-├── go.mod
-├── cmd/                    # Binary entry points (thin wrappers only)
+├── go.mod                 # Module definition: github.com/ephlabs/eph
+├── go.sum                 # Dependency checksums
+├── Makefile              # Build automation
+├── LICENSE               # Apache 2.0 license
+├── README.md             # Project documentation
+├── cmd/                  # Binary entry points (thin wrappers only)
 │   ├── eph/
-│   │   └── main.go        # CLI binary: import internal/cli; cli.Execute()
+│   │   └── main.go      # CLI binary: import internal/cli; cli.Execute()
 │   └── ephd/
-│       └── main.go        # Daemon binary: import internal/server; server.Run()
-├── internal/              # Private application code (compiler enforced)
-│   ├── server/            # HTTP server implementation
-│   │   ├── server.go      # Core server logic
-│   │   ├── handlers.go    # HTTP handlers
-│   │   ├── middleware.go  # HTTP middleware
-│   │   └── *_test.go      # Server tests
-│   ├── cli/               # CLI command implementation
-│   │   ├── root.go        # Root Cobra command
-│   │   ├── version.go     # Version command
-│   │   ├── wtf.go         # Diagnostic command
-│   │   └── *_test.go      # CLI tests
-│   ├── api/               # API client/server shared code
-│   │   ├── client.go      # HTTP client for eph CLI
-│   │   ├── types.go       # Shared API types
-│   │   └── *_test.go      # API tests
-│   ├── config/            # Configuration parsing and validation
-│   ├── controller/        # Environment orchestration logic
-│   ├── providers/         # Provider implementations
-│   │   ├── interface.go   # Provider interface
-│   │   └── kubernetes/    # Kubernetes provider
-│   ├── state/             # Database state management
-│   ├── webhook/           # Git webhook handlers
-│   └── worker/            # Background job processing
-├── pkg/                   # Exportable packages (use sparingly)
-│   └── version/           # Version information
-└── api/                   # API definitions and documentation
-    ├── openapi.yaml       # OpenAPI specification
-    └── schemas/           # JSON schemas
+│       └── main.go      # Daemon binary: import internal/server; server.Run()
+├── internal/            # Private application code (compiler enforced)
+│   ├── server/          # HTTP server implementation
+│   │   ├── server.go    # Core server logic
+│   │   └── README.md    # Package documentation
+│   ├── cli/             # CLI command implementation
+│   │   ├── root.go      # Root Cobra command
+│   │   ├── auth.go      # Authentication commands
+│   │   ├── completion.go # Shell completion support
+│   │   ├── down.go      # Environment destruction
+│   │   ├── list.go      # List environments
+│   │   ├── logs.go      # Stream logs
+│   │   ├── up.go        # Create environment
+│   │   ├── version.go   # Version command
+│   │   ├── wtf.go       # Diagnostic command
+│   │   └── *_test.go    # CLI tests
+│   ├── api/             # API client/server shared code
+│   ├── config/          # Configuration parsing and validation
+│   ├── controller/      # Environment orchestration logic
+│   ├── log/             # Logging utilities
+│   ├── migrate/         # Database migration logic
+│   ├── providers/       # Provider implementations
+│   │   └── kubernetes/  # Kubernetes provider
+│   ├── state/           # Database state management
+│   ├── webhook/         # Git webhook handlers
+│   └── worker/          # Background job processing
+├── pkg/                 # Exportable packages (use sparingly)
+│   └── version/         # Version information
+│       ├── version.go   # Version constants and variables
+│       └── README.md    # Package documentation
+├── bin/                 # Build output directory (gitignored)
+├── configs/             # Example configurations
+├── docs/                # Project documentation
+│   └── architecture-plan.md
+├── migrations/          # Database migration files
+├── scripts/             # Build and CI scripts
+│   └── setup-ci.sh
+└── web/                 # Web dashboard (React)
 ```
 
 ### Package Responsibilities
@@ -964,30 +977,33 @@ Each component focuses on its specific responsibility while communicating throug
 
 ### MVP Code Structure
 
-The MVP follows a clean architecture pattern with clear separation between layers:
+The MVP follows the idiomatic Go project structure described in the "Go Project Structure and Code Organization" section above, with a clean separation between layers:
 
 ```
 eph/
 ├── cmd/
-│   ├── eph/          # CLI commands
-│   └── ephd/         # Server daemon
-├── pkg/
-│   ├── api/          # HTTP API handlers
-│   ├── config/       # Configuration parsing
-│   ├── controller/   # Environment orchestration
-│   ├── providers/    # Provider implementations
+│   ├── eph/              # CLI binary entry point
+│   └── ephd/             # Server daemon entry point
+├── internal/             # Private application code
+│   ├── api/              # HTTP API client/server shared code
+│   ├── cli/              # CLI command implementations
+│   ├── config/           # Configuration parsing
+│   ├── controller/       # Environment orchestration
+│   ├── providers/        # Provider implementations
 │   │   └── kubernetes/
-│   ├── state/        # PostgreSQL state management
-│   ├── webhook/      # Git webhook handlers
-│   └── worker/       # Background job processing
-├── web/              # Web dashboard (React)
-├── configs/          # Example configurations
-└── docs/             # Documentation
+│   ├── server/           # HTTP server implementation
+│   ├── state/            # PostgreSQL state management
+│   ├── webhook/          # Git webhook handlers
+│   └── worker/           # Background job processing
+├── pkg/
+│   └── version/          # Exportable version information
+├── web/                  # Web dashboard (React)
+├── configs/              # Example configurations
+├── migrations/           # Database migrations
+└── docs/                 # Documentation
 ```
 
-### MVP Code Structure
-
-The MVP follows the idiomatic Go project structure described in the "Go Project Structure and Code Organization" section above. This structure provides:
+This structure provides:
 
 1. Clean separation between API handlers, business logic, and infrastructure code
 2. Proper testability of all core components
