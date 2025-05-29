@@ -2,7 +2,6 @@ package server
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/ephlabs/eph/pkg/version"
 )
@@ -10,28 +9,18 @@ import (
 func (s *Server) setupRoutes() *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// Health endpoint
-	mux.HandleFunc("/health", s.healthHandler)
-
-	// API v1 routes
-	mux.HandleFunc("/api/v1/status", s.statusHandler)
-	mux.HandleFunc("/api/v1/environments", s.environmentsHandler)
-
-	// Handle environment ID paths
-	mux.HandleFunc("/api/v1/environments/", s.environmentIDHandler)
-
-	// 404 handler for unknown routes
+	mux.HandleFunc("GET /health", s.healthHandler)
+	mux.HandleFunc("GET /api/v1/status", s.statusHandler)
+	mux.HandleFunc("GET /api/v1/environments", s.listEnvironments)
+	mux.HandleFunc("POST /api/v1/environments", s.createEnvironment)
+	mux.HandleFunc("DELETE /api/v1/environments/{id}", s.deleteEnvironment)
+	mux.HandleFunc("GET /api/v1/environments/{id}/logs", s.environmentLogs)
 	mux.HandleFunc("/", s.notFoundHandler)
 
 	return mux
 }
 
-func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+func (s *Server) healthHandler(w http.ResponseWriter, _ *http.Request) {
 	response := map[string]string{
 		"status":  "ok",
 		"service": "ephd",
@@ -41,16 +30,11 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	s.jsonResponse(w, http.StatusOK, response)
 }
 
-func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+func (s *Server) statusHandler(w http.ResponseWriter, _ *http.Request) {
 	response := map[string]interface{}{
 		"status":  "healthy",
 		"version": version.GetVersion(),
-		"uptime":  "unknown", // TODO: track actual uptime
+		"uptime":  "unknown",
 		"environments": map[string]int{
 			"total":  0,
 			"active": 0,
@@ -58,17 +42,6 @@ func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.jsonResponse(w, http.StatusOK, response)
-}
-
-func (s *Server) environmentsHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.listEnvironments(w, r)
-	case http.MethodPost:
-		s.createEnvironment(w, r)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
 }
 
 func (s *Server) listEnvironments(w http.ResponseWriter, _ *http.Request) {
@@ -90,32 +63,8 @@ func (s *Server) createEnvironment(w http.ResponseWriter, _ *http.Request) {
 	s.jsonResponse(w, http.StatusNotImplemented, response)
 }
 
-func (s *Server) environmentIDHandler(w http.ResponseWriter, r *http.Request) {
-	// Extract environment ID from path
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/environments/")
-	parts := strings.Split(path, "/")
-	envID := parts[0]
-
-	if len(parts) > 1 && parts[1] == "logs" {
-		s.environmentLogs(w, r, envID)
-		return
-	}
-
-	if r.Method == http.MethodDelete {
-		s.deleteEnvironment(w, r, envID)
-		return
-	}
-
-	// For GET or other methods on a known environment ID (not logs), return 405
-	if r.Method != http.MethodDelete {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	http.Error(w, "Not found", http.StatusNotFound)
-}
-
-func (s *Server) deleteEnvironment(w http.ResponseWriter, _ *http.Request, envID string) {
+func (s *Server) deleteEnvironment(w http.ResponseWriter, r *http.Request) {
+	envID := r.PathValue("id")
 	response := map[string]interface{}{
 		"message":        "Environment deletion coming soon!",
 		"environment_id": envID,
@@ -125,7 +74,8 @@ func (s *Server) deleteEnvironment(w http.ResponseWriter, _ *http.Request, envID
 	s.jsonResponse(w, http.StatusNotImplemented, response)
 }
 
-func (s *Server) environmentLogs(w http.ResponseWriter, _ *http.Request, envID string) {
+func (s *Server) environmentLogs(w http.ResponseWriter, r *http.Request) {
+	envID := r.PathValue("id")
 	response := map[string]interface{}{
 		"message":        "Log streaming coming soon!",
 		"environment_id": envID,

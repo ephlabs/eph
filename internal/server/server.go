@@ -62,7 +62,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func Run() error {
 	server := New(nil)
 
-	// Setup graceful shutdown
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 

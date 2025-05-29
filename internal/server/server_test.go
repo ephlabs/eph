@@ -35,32 +35,9 @@ func TestHealthHandler(t *testing.T) {
 	if response["service"] != "ephd" {
 		t.Errorf("expected service 'ephd', got %s", response["service"])
 	}
-}
 
-func TestEnvironmentsHandler(t *testing.T) {
-	server := New(nil)
-
-	tests := []struct {
-		name           string
-		method         string
-		expectedStatus int
-	}{
-		{"GET environments", "GET", http.StatusOK},
-		{"POST environment", "POST", http.StatusNotImplemented},
-		{"PUT not allowed", "PUT", http.StatusMethodNotAllowed},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, "/api/v1/environments", nil)
-			w := httptest.NewRecorder()
-
-			server.environmentsHandler(w, req)
-
-			if w.Code != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
-			}
-		})
+	if response["version"] == "" {
+		t.Error("expected version to be non-empty")
 	}
 }
 
@@ -78,12 +55,10 @@ func TestMiddleware(t *testing.T) {
 
 	wrapped.ServeHTTP(w, req)
 
-	// Check CORS headers
 	if w.Header().Get("Access-Control-Allow-Origin") == "" {
 		t.Error("expected CORS headers to be set")
 	}
 
-	// Check request ID
 	if w.Header().Get("X-Request-ID") == "" {
 		t.Error("expected request ID header to be set")
 	}
@@ -109,34 +84,9 @@ func TestStatusHandler(t *testing.T) {
 	if response["status"] != "healthy" {
 		t.Errorf("expected status 'healthy', got %v", response["status"])
 	}
-}
 
-func TestEnvironmentIDHandler(t *testing.T) {
-	server := New(nil)
-
-	tests := []struct {
-		name           string
-		path           string
-		method         string
-		expectedStatus int
-	}{
-		{"DELETE environment", "/api/v1/environments/test-id", "DELETE", http.StatusNotImplemented},
-		{"GET logs", "/api/v1/environments/test-id/logs", "GET", http.StatusNotImplemented},
-		{"GET environment - Method not allowed", "/api/v1/environments/test-id", "GET", http.StatusMethodNotAllowed},
-		{"PUT environment - Method not allowed", "/api/v1/environments/test-id", "PUT", http.StatusMethodNotAllowed},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
-			w := httptest.NewRecorder()
-
-			server.environmentIDHandler(w, req)
-
-			if w.Code != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
-			}
-		})
+	if response["version"] == "" {
+		t.Error("expected version to be non-empty")
 	}
 }
 
@@ -171,8 +121,7 @@ func TestCORSMiddleware(t *testing.T) {
 
 	wrapped := server.applyMiddleware(handler)
 
-	// Test OPTIONS request
-	req := httptest.NewRequest("OPTIONS", "/test", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/test", nil)
 	w := httptest.NewRecorder()
 
 	wrapped.ServeHTTP(w, req)
@@ -181,7 +130,6 @@ func TestCORSMiddleware(t *testing.T) {
 		t.Errorf("expected status %d for OPTIONS, got %d", http.StatusOK, w.Code)
 	}
 
-	// Check CORS headers
 	if w.Header().Get("Access-Control-Allow-Origin") != "*" {
 		t.Error("expected CORS origin header to be '*'")
 	}
@@ -251,13 +199,11 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestNewServer(t *testing.T) {
-	// Test with nil config
 	server := New(nil)
 	if server.config.Port != ":8080" {
 		t.Errorf("expected default port :8080, got %s", server.config.Port)
 	}
 
-	// Test with custom config
 	cfg := &Config{
 		Port:         ":9090",
 		ReadTimeout:  10 * time.Second,
@@ -336,13 +282,6 @@ func TestRunWithSignal(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Error("Run() did not complete within timeout")
 	}
-}
-
-func TestRunServerError(t *testing.T) {
-	// Test Run function when server fails to start
-	// This is difficult to test directly without modifying the code
-	// to inject errors, so we'll skip this for now
-	t.Skip("Testing server start errors requires code refactoring")
 }
 
 // Benchmark test

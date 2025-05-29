@@ -57,7 +57,7 @@ func TestCORSMiddlewareAllMethods(t *testing.T) {
 
 	wrapped := corsMiddleware(handler)
 
-	methods := []string{"GET", "POST", "PUT", "DELETE"}
+	methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete}
 	for _, method := range methods {
 		t.Run(method, func(t *testing.T) {
 			req := httptest.NewRequest(method, "/test", nil)
@@ -69,9 +69,15 @@ func TestCORSMiddlewareAllMethods(t *testing.T) {
 				t.Error("expected CORS origin header to be '*'")
 			}
 
-			expectedMethods := "GET, POST, PUT, DELETE, OPTIONS"
+			expectedMethods := strings.Join([]string{
+				http.MethodGet,
+				http.MethodPost,
+				http.MethodPut,
+				http.MethodDelete,
+				http.MethodOptions,
+			}, ", ")
 			if w.Header().Get("Access-Control-Allow-Methods") != expectedMethods {
-				t.Errorf("expected CORS methods header to be '%s'", expectedMethods)
+				t.Errorf("expected CORS methods header to be '%s', got '%s'", expectedMethods, w.Header().Get("Access-Control-Allow-Methods"))
 			}
 
 			expectedHeaders := "Content-Type, Authorization"

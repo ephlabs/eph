@@ -41,42 +41,6 @@ func TestSetupRoutes(t *testing.T) {
 	}
 }
 
-func TestHealthHandlerMethods(t *testing.T) {
-	server := New(nil)
-
-	methods := []string{"POST", "PUT", "DELETE", "PATCH"}
-	for _, method := range methods {
-		t.Run(method, func(t *testing.T) {
-			req := httptest.NewRequest(method, "/health", nil)
-			w := httptest.NewRecorder()
-
-			server.healthHandler(w, req)
-
-			if w.Code != http.StatusMethodNotAllowed {
-				t.Errorf("expected status %d for %s, got %d", http.StatusMethodNotAllowed, method, w.Code)
-			}
-		})
-	}
-}
-
-func TestStatusHandlerMethods(t *testing.T) {
-	server := New(nil)
-
-	methods := []string{"POST", "PUT", "DELETE", "PATCH"}
-	for _, method := range methods {
-		t.Run(method, func(t *testing.T) {
-			req := httptest.NewRequest(method, "/api/v1/status", nil)
-			w := httptest.NewRecorder()
-
-			server.statusHandler(w, req)
-
-			if w.Code != http.StatusMethodNotAllowed {
-				t.Errorf("expected status %d for %s, got %d", http.StatusMethodNotAllowed, method, w.Code)
-			}
-		})
-	}
-}
-
 func TestListEnvironments(t *testing.T) {
 	server := New(nil)
 
@@ -133,9 +97,10 @@ func TestDeleteEnvironment(t *testing.T) {
 	server := New(nil)
 
 	req := httptest.NewRequest("DELETE", "/api/v1/environments/test-env", nil)
+	req.SetPathValue("id", "test-env")
 	w := httptest.NewRecorder()
 
-	server.deleteEnvironment(w, req, "test-env")
+	server.deleteEnvironment(w, req)
 
 	if w.Code != http.StatusNotImplemented {
 		t.Errorf("expected status %d, got %d", http.StatusNotImplemented, w.Code)
@@ -159,9 +124,10 @@ func TestEnvironmentLogs(t *testing.T) {
 	server := New(nil)
 
 	req := httptest.NewRequest("GET", "/api/v1/environments/test-env/logs", nil)
+	req.SetPathValue("id", "test-env")
 	w := httptest.NewRecorder()
 
-	server.environmentLogs(w, req, "test-env")
+	server.environmentLogs(w, req)
 
 	if w.Code != http.StatusNotImplemented {
 		t.Errorf("expected status %d, got %d", http.StatusNotImplemented, w.Code)
@@ -243,73 +209,5 @@ func TestJSONResponse(t *testing.T) {
 
 	if response["key3"] != true {
 		t.Errorf("expected key3 true, got %v", response["key3"])
-	}
-}
-
-func TestEnvironmentIDHandlerRouting(t *testing.T) {
-	server := New(nil)
-
-	tests := []struct {
-		name   string
-		path   string
-		method string
-		check  func(t *testing.T, w *httptest.ResponseRecorder)
-	}{
-		{
-			name:   "logs endpoint",
-			path:   "/api/v1/environments/env123/logs",
-			method: "GET",
-			check: func(t *testing.T, w *httptest.ResponseRecorder) {
-				if w.Code != http.StatusNotImplemented {
-					t.Errorf("expected status %d, got %d", http.StatusNotImplemented, w.Code)
-				}
-				var resp map[string]interface{}
-				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-					t.Errorf("failed to decode response: %v", err)
-				}
-				if resp["environment_id"] != "env123" {
-					t.Errorf("expected environment_id 'env123', got %v", resp["environment_id"])
-				}
-			},
-		},
-		{
-			name:   "delete endpoint",
-			path:   "/api/v1/environments/env456",
-			method: "DELETE",
-			check: func(t *testing.T, w *httptest.ResponseRecorder) {
-				if w.Code != http.StatusNotImplemented {
-					t.Errorf("expected status %d, got %d", http.StatusNotImplemented, w.Code)
-				}
-				var resp map[string]interface{}
-				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-					t.Errorf("failed to decode response: %v", err)
-				}
-				if resp["environment_id"] != "env456" {
-					t.Errorf("expected environment_id 'env456', got %v", resp["environment_id"])
-				}
-			},
-		},
-		{
-			name:   "invalid method",
-			path:   "/api/v1/environments/env789",
-			method: "POST",
-			check: func(t *testing.T, w *httptest.ResponseRecorder) {
-				if w.Code != http.StatusMethodNotAllowed {
-					t.Errorf("expected status %d, got %d", http.StatusMethodNotAllowed, w.Code)
-				}
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
-			req.URL.Path = tt.path // Ensure URL.Path is set correctly
-			w := httptest.NewRecorder()
-
-			server.environmentIDHandler(w, req)
-
-			tt.check(t, w)
-		})
 	}
 }

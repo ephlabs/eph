@@ -86,6 +86,33 @@ Eph is an ephemeral environment orchestrator designed for pull request workflows
 
 The project is in pre-MVP phase with:
 - Basic CLI structure complete (version, completion, wtf commands)
+- HTTP server with middleware and placeholder API endpoints
 - Comprehensive CI/CD pipeline ready
 - Architecture documented but core features not yet implemented
 - Commands stubbed: up, down, list, logs, auth
+
+## Development Guidelines
+
+### Library Usage and Documentation
+
+When using Go standard library or third-party packages:
+1. **Check Current Documentation**: Always verify you're using the most up-to-date APIs and patterns
+   - For Go standard library: check https://pkg.go.dev/std
+   - For third-party packages: check their latest documentation
+   - Pay special attention to version-specific features (e.g., Go 1.22+ routing enhancements)
+
+2. **Version Awareness**: This project uses Go 1.24.3, which includes:
+   - Enhanced HTTP routing with method-based patterns and wildcards (since Go 1.22)
+   - `http.Request.PathValue()` for extracting path parameters (since Go 1.22)
+   - Range over integers (since Go 1.22)
+   - All the latest Go features and performance improvements
+   - Always check the Go release notes for version-specific features
+
+3. **Avoid Outdated Patterns**: Don't rely on memory of older patterns; verify current best practices
+
+### Code Style Guidelines
+
+- Minimize unnecessary comments - code should be self-documenting
+- Use standard library constants instead of string literals (e.g., `http.MethodGet` not `"GET"`)
+- Handle all errors appropriately - never ignore error returns
+- Keep functions focused and testable
