@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -15,6 +16,7 @@ import (
 type Server struct {
 	httpServer *http.Server
 	config     *Config
+	mu         sync.RWMutex
 }
 
 type Config struct {
@@ -43,7 +45,7 @@ func New(cfg *Config) *Server {
 func (s *Server) Start() error {
 	mux := s.setupRoutes()
 
-	s.httpServer = &http.Server{
+	server := &http.Server{
 		Addr:         s.config.Port,
 		Handler:      s.applyMiddleware(mux),
 		ReadTimeout:  s.config.ReadTimeout,
@@ -51,11 +53,21 @@ func (s *Server) Start() error {
 		IdleTimeout:  s.config.IdleTimeout,
 	}
 
+	s.mu.Lock()
+	s.httpServer = server
+	s.mu.Unlock()
+
 	log.Printf("Starting Eph daemon on %s", s.config.Port)
-	return s.httpServer.ListenAndServe()
+	return server.ListenAndServe()
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.httpServer == nil {
+		return nil
+	}
 	return s.httpServer.Shutdown(ctx)
 }
 

@@ -229,8 +229,9 @@ func TestShutdown(t *testing.T) {
 	server := New(&Config{Port: ":0"}) // Random port
 
 	// Start server in goroutine
+	serverErr := make(chan error, 1)
 	go func() {
-		_ = server.Start()
+		serverErr <- server.Start()
 	}()
 
 	// Wait for server to start
@@ -243,6 +244,16 @@ func TestShutdown(t *testing.T) {
 	err := server.Shutdown(ctx)
 	if err != nil {
 		t.Errorf("unexpected shutdown error: %v", err)
+	}
+
+	// Wait for server to actually stop
+	select {
+	case err := <-serverErr:
+		if err != nil && err != http.ErrServerClosed {
+			t.Errorf("unexpected server error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("server did not stop within timeout")
 	}
 }
 
