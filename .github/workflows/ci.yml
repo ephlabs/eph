@@ -67,16 +67,11 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           # Caching is automatic in v5
 
-      - name: Run database migrations
-        env:
-          DATABASE_URL: postgres://eph_test:eph_test@localhost:5432/eph_test?sslmode=disable
+      - name: Skip database migrations (not implemented yet)
         run: |
-          go run ./cmd/ephd migrate up
-          go run ./cmd/ephd migrate status
+          echo "⚠️  Database migrations will be added once database functionality is implemented"
 
       - name: Run tests
-        env:
-          DATABASE_URL: postgres://eph_test:eph_test@localhost:5432/eph_test?sslmode=disable
         run: |
           go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
@@ -176,19 +171,15 @@ jobs:
       - name: Make binaries executable
         run: chmod +x bin/*
 
-      - name: Run database migrations
-        env:
-          DATABASE_URL: postgres://eph_test:eph_test@localhost:5432/eph_test?sslmode=disable
+      - name: Skip database migrations (not implemented yet)
         run: |
-          ./bin/ephd-${{ matrix.goos }}-${{ matrix.goarch }} migrate up
+          echo "⚠️  Database migrations will be added once database functionality is implemented"
 
-      - name: Test ephd binary
+      - name: Run integration tests
         run: |
-          # Test that ephd binary runs (currently just prints and exits)
-          ./bin/ephd-${{ matrix.goos }}-${{ matrix.goarch }}
-
-          # TODO: Add server tests once server is implemented
-          echo "⚠️  Server integration tests will be added once ephd server is implemented"
+          # Run our comprehensive integration tests
+          go test -v -tags=integration ./internal/server/
+          echo "✅ ephd HTTP server integration tests passed"
 
       - name: Test eph CLI
         run: |
@@ -198,8 +189,7 @@ jobs:
           # Test CLI help command
           ./bin/eph-${{ matrix.goos }}-${{ matrix.goarch }} --help
 
-          # TODO: Add API tests once server is implemented
-          echo "⚠️  API integration tests will be added once ephd server is implemented"
+          echo "✅ eph CLI tests passed"
 
   security-scan:
     name: Security Scan

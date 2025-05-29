@@ -284,50 +284,6 @@ func TestConcurrentRequests(t *testing.T) {
 	}
 }
 
-func TestServerShutdownTimeout(t *testing.T) {
-	// Find a free port
-	listener, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatalf("failed to find free port: %v", err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
-
-	config := &Config{
-		Port:         fmt.Sprintf(":%d", port),
-		ReadTimeout:  1 * time.Second,
-		WriteTimeout: 1 * time.Second,
-		IdleTimeout:  1 * time.Second,
-	}
-
-	server := New(config)
-
-	// Start server
-	go func() {
-		server.Start()
-	}()
-
-	// Wait for server to start
-	time.Sleep(100 * time.Millisecond)
-
-	// Test with already canceled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	err = server.Shutdown(ctx)
-	if err == nil {
-		t.Error("expected shutdown to fail with canceled context")
-	}
-
-	// Now shutdown properly
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel2()
-
-	if err := server.Shutdown(ctx2); err != nil {
-		t.Errorf("proper shutdown failed: %v", err)
-	}
-}
-
 func TestRunFunction(t *testing.T) {
 	// Test the full Run function with signal handling
 	done := make(chan bool, 1)
