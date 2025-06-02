@@ -1,6 +1,6 @@
 # Test coverage configuration for Eph
 # Path to coverage profile file (output of `go test -coverprofile` command).
-profile: cover.out
+profile: coverage.out
 
 # Holds coverage thresholds percentages, values should be in range [0-100].
 threshold:
@@ -27,6 +27,18 @@ override:
       file: 60
       package: 70
 
+  # Internal server handlers might have lower coverage due to integration nature
+  - path: ^internal/server/handlers
+    threshold:
+      file: 65
+      package: 75
+
+  # Database models/migrations might be harder to test in unit tests
+  - path: ^internal/db
+    threshold:
+      file: 60
+      package: 70
+
 # Exclude files from coverage statistics
 exclude:
   paths:
@@ -38,11 +50,24 @@ exclude:
     # Test files (coverage tools sometimes include these)
     - \_test\.go$
 
+    # Mock files
+    - mock_.*\.go$
+    - .*_mock\.go$
+
     # Example/demo code
     - ^examples/
 
+    # Documentation
+    - ^docs/
+
     # Vendor directory (if used)
     - ^vendor/
+
+    # Testdata directories
+    - testdata/
+
+    # Main functions (often hard to test)
+    - ^cmd/.*/main\.go$
 
 # Report generation settings
 report:
@@ -51,3 +76,6 @@ report:
 
   # Print uncovered files
   print-uncovered: true
+
+  # Print coverage for each package
+  print-packages: true

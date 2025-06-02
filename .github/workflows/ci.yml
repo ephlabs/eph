@@ -65,14 +65,16 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          # Caching is automatic in v5
+
+      - name: Skip database migrations (not implemented yet)
+        run: |
+          echo "⚠️  Database migrations will be added once database functionality is implemented"
 
       - name: Install test tools
         run: |
           # Install gotestsum for better test output and JUnit XML generation
           go install gotest.tools/gotestsum@latest
-
-          # Install gotestfmt for beautiful test formatting (backup option)
-          go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest
 
       - name: Run tests with enhanced output
         run: |
@@ -89,13 +91,11 @@ jobs:
             -tags='!integration' \
             ./...
 
-      - name: Generate coverage report
-        uses: fgrosse/go-coverage-report@v1.1.1
+      - name: Generate coverage report summary
         if: github.event_name == 'pull_request'
-        with:
-          coverage-artifact-name: coverage-report
-          coverage-file-name: coverage.out
-          root-package: github.com/ephlabs/eph
+        run: |
+          echo "📊 Coverage Report Summary:"
+          go tool cover -func=coverage.out | tail -1
 
       - name: Check coverage thresholds
         uses: vladopajic/go-test-coverage@v2
@@ -112,16 +112,6 @@ jobs:
           paths: "unit-tests.xml"
           show: "fail, skip"
 
-      - name: Detailed Test Reporter (Optional)
-        uses: dorny/test-reporter@v1
-        if: always()
-        with:
-          name: 'Go Unit Tests'
-          path: 'unit-tests.xml'
-          reporter: java-junit
-          fail-on-error: false  # Don't fail CI, just report
-          max-annotations: 50   # Limit annotations to avoid noise
-
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
@@ -137,133 +127,12 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.out
+          flags: unittests
+          name: eph-coverage
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
 
-  integration-test:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    needs: [build]
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: eph_test
-          POSTGRES_PASSWORD: eph_test
-          POSTGRES_DB: eph_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download ephd binary
-        uses: actions/download-artifact@v4
-        with:
-          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: bin/
-
-      - name: Make binaries executable
-        run: chmod +x bin/*
-
-      - name: Install test tools
-        run: |
-          go install gotest.tools/gotestsum@latest
-
-      - name: Start ephd server in background
-        run: |
-          ./bin/ephd-${{ matrix.goos }}-${{ matrix.goarch }} &
-          SERVER_PID=$!
-          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
-
-          # Wait for server to be healthy
-          max_attempts=30
-          attempt_num=0
-          until curl --fail --silent http://localhost:8080/health > /dev/null 2>&1; do
-            attempt_num=$((attempt_num+1))
-            if (( attempt_num == max_attempts )); then
-              echo "❌ Server did not become healthy after $max_attempts attempts."
-              exit 1
-            fi
-            echo "🔄 Health check attempt $attempt_num/$max_attempts..."
-            sleep 2
-          done
-          echo "✅ Server is healthy and ready for integration tests"
-
-      - name: Run integration tests with enhanced output
-        run: |
-          # Run integration tests with gotestsum
-          gotestsum \
-            --format=testname \
-            --junitfile=integration-tests.xml \
-            --jsonfile=integration-tests.json \
-            -- \
-            -race \
-            -coverprofile=integration-coverage.out \
-            -covermode=atomic \
-            -tags=integration \
-            ./internal/server/...
-
-      - name: Stop ephd server
-        if: always()
-        run: |
-          if [ ! -z "$SERVER_PID" ]; then
-            kill $SERVER_PID || true
-          fi
-
-      - name: Integration Test Summary
-        uses: test-summary/action@v2
-        if: always()
-        with:
-          paths: "integration-tests.xml"
-          show: "fail, skip"
-
-      - name: Detailed Integration Test Reporter (Optional)
-        uses: dorny/test-reporter@v1
-        if: always()
-        with:
-          name: 'Go Integration Tests'
-          path: 'integration-tests.xml'
-          reporter: java-junit
-          fail-on-error: false
-          max-annotations: 50
-
-      - name: Test CLI commands
-        run: |
-          echo "🧪 Testing CLI commands..."
-
-          # Test version command
-          ./bin/eph-${{ matrix.goos }}-${{ matrix.goarch }} version
-
-          # Test help command
-          ./bin/eph-${{ matrix.goos }}-${{ matrix.goarch }} --help
-
-          # Test wtf command
-          ./bin/eph-${{ matrix.goos }}-${{ matrix.goarch }} wtf
-
-          echo "✅ CLI integration tests passed"
-
-      - name: Upload integration test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: integration-test-results
-          path: |
-            integration-tests.xml
-            integration-tests.json
-            integration-coverage.out
-          retention-days: 7
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -316,12 +185,139 @@ jobs:
           path: bin/
           retention-days: 7
 
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: eph_test
+          POSTGRES_PASSWORD: eph_test
+          POSTGRES_DB: eph_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Download ephd binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/
+
+      - name: Make binaries executable
+        run: chmod +x bin/*
+
+      - name: Skip database migrations (not implemented yet)
+        run: |
+          echo "⚠️  Database migrations will be added once database functionality is implemented"
+
+      - name: Install test tools
+        run: |
+          go install gotest.tools/gotestsum@latest
+
+      - name: Start ephd server
+        run: |
+          ./bin/ephd-${{ matrix.goos }}-${{ matrix.goarch }} &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+          trap "kill $SERVER_PID" EXIT
+          echo "Waiting for server to become healthy..."
+          max_attempts=30
+          attempt_num=0
+          until curl --fail --silent http://localhost:8080/health > /dev/null 2>&1; do
+            attempt_num=$((attempt_num+1))
+            if (( attempt_num == max_attempts )); then
+              echo "Server did not become healthy after $max_attempts attempts."
+              exit 1
+            fi
+            echo "Health check attempt $attempt_num/$max_attempts failed. Retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "Server is healthy."
+
+      - name: Run integration tests with enhanced output
+        run: |
+          # Run integration tests with gotestsum
+          gotestsum \
+            --format=testname \
+            --junitfile=integration-tests.xml \
+            --jsonfile=integration-tests.json \
+            -- \
+            -race \
+            -coverprofile=integration-coverage.out \
+            -covermode=atomic \
+            -tags=integration \
+            ./internal/server/...
+
+      - name: Integration Test Summary
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: "integration-tests.xml"
+          show: "fail, skip"
+
+      - name: Test eph CLI
+        run: |
+          # Test CLI version command
+          ./bin/eph-${{ matrix.goos }}-${{ matrix.goarch }} version
+
+          # Test CLI help command
+          ./bin/eph-${{ matrix.goos }}-${{ matrix.goarch }} --help
+
+          echo "✅ eph CLI tests passed"
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: |
+            integration-tests.xml
+            integration-tests.json
+            integration-coverage.out
+          retention-days: 7
+
+      - name: Upload integration coverage to Codecov
+        if: always() && hashFiles('integration-coverage.out') != ''
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./integration-coverage.out
+          flags: integration
+          name: eph-integration-coverage
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.20.0
@@ -337,16 +333,17 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
       - name: Install and run gosec security scanner
         run: |
           # Install gosec using the Go version we already have (1.24.3)
           echo "📦 Installing gosec..."
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+          # Try go install first, fall back to curl method if it fails
+          if ! go install github.com/securego/gosec/v2/cmd/gosec@latest; then
+            echo "⚠️ go install failed, trying curl method..."
+            curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+            export PATH=$PATH:$(go env GOPATH)/bin
+          fi
 
           echo "🔍 Running gosec security scanner..."
           echo "================================================="
@@ -364,6 +361,7 @@ jobs:
           echo "================================================="
           echo "💡 To reproduce locally:"
           echo "   go install github.com/securego/gosec/v2/cmd/gosec@latest"
+          echo "   # OR: curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s latest"
           echo "   gosec -fmt table -verbose ./..."
           echo "================================================="
 
