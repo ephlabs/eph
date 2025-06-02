@@ -178,6 +178,8 @@ jobs:
       - name: Start ephd server
         run: |
           ./bin/ephd-${{ matrix.goos }}-${{ matrix.goarch }} &
+          SERVER_PID=$!
+          trap "kill $SERVER_PID" EXIT
           echo "Waiting for server to become healthy..."
           max_attempts=12
           attempt_num=0
