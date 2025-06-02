@@ -34,6 +34,9 @@ graph LR
 ```
 
 **Key principles:**
+- **Reconciliation-first**: Eph continuously reconciles desired state (PRs with labels) against actual state (running environments)
+- **Crash-only design**: No graceful shutdown needed - just restart and reconcile
+- **Stateless controller**: External systems (GitHub, Kubernetes) are the source of truth, not internal databases
 - Eph orchestrates environments, it doesn't build images (that's CI's job)
 - Works with your existing infrastructure (Kubernetes, Docker, cloud providers)
 - Extensible via gRPC-based provider plugins
@@ -43,25 +46,24 @@ graph LR
 
 ```mermaid
 graph TB
+    subgraph "External Sources of Truth"
+        GitHub[GitHub API<br/>PRs + Labels]
+        K8sAPI[Kubernetes API<br/>Namespaces + Deployments]
+    end
+
     subgraph "Untrusted Environment"
         CLI[eph CLI]
         WebUI[Web Browser UI]
     end
 
-    subgraph "Event Sources"
-        GH[GitHub Webhooks]
-        GL[GitLab Webhooks]
-        API[Direct API Calls]
-    end
-
     subgraph "Trusted Environment - ephd Daemon"
         RestAPI[REST API Server]
 
-        subgraph "Core Engine"
-            Gateway[API Gateway]
-            Events[Event Processor]
-            Orchestrator[Environment Orchestrator]
-            State[State Store<br/>PostgreSQL]
+        subgraph "Reconciliation Engine"
+            GHInformer[GitHub Informer<br/>Polls every 30s]
+            K8sInformer[K8s Informer<br/>Watches continuously]
+            Cache[In-Memory Cache<br/>Current state view]
+            Reconciler[Reconciler<br/>Compares desired vs actual]
         end
 
         subgraph "Provider Interface"
@@ -70,20 +72,27 @@ graph TB
             Docker[Docker Provider]
             Cloud[Cloud Providers<br/>ECS, Cloud Run, etc.]
         end
+
+        subgraph "Optional Components"
+            Webhooks[Webhook Handler<br/>Triggers immediate reconcile]
+            EventLog[PostgreSQL<br/>Event log + coordination]
+        end
     end
 
     CLI -- "HTTPS" --> RestAPI
     WebUI -- "HTTPS" --> RestAPI
-    GH --> Gateway
-    GL --> Gateway
-    API --> Gateway
-    Gateway --> Events
-    Events --> Orchestrator
-    Orchestrator <--> State
-    Orchestrator <--> ProviderAPI
-    ProviderAPI <--> K8s
-    ProviderAPI <--> Docker
-    ProviderAPI <--> Cloud
+    GitHub --> GHInformer
+    K8sAPI --> K8sInformer
+    GHInformer --> Cache
+    K8sInformer --> Cache
+    Cache --> Reconciler
+    Reconciler --> ProviderAPI
+    ProviderAPI --> K8s
+    ProviderAPI --> Docker
+    ProviderAPI --> Cloud
+    Reconciler -.-> EventLog
+    Webhooks -.-> Reconciler
+    GitHub -.-> Webhooks
 ```
 
 **Important**: The eph CLI is a pure API client with zero direct access to infrastructure, databases, or providers. All operations flow through the ephd REST API.
@@ -146,13 +155,14 @@ eph/
 │   ├── cli/               # CLI command implementation
 │   ├── api/               # API client/server shared code
 │   ├── config/            # Configuration parsing and validation
-│   ├── controller/        # Environment orchestration logic
+│   ├── controller/        # Environment reconciliation logic (stateless)
+│   ├── informers/         # GitHub and Kubernetes informers
 │   ├── providers/         # Provider implementations
 │   │   ├── interface.go   # Provider interface
 │   │   └── kubernetes/    # Kubernetes provider
-│   ├── state/             # Database state management
+│   ├── state/             # Event logging (not authoritative state)
 │   ├── webhook/           # Git webhook handlers
-│   └── worker/            # Background job processing
+│   └── worker/            # Background reconciliation loops
 ├── pkg/                   # Exportable packages (use sparingly)
 │   └── version/           # Version information
 ├── web/                   # React dashboard
@@ -173,6 +183,7 @@ This structure ensures:
 - All business logic is testable
 - `internal/` prevents external dependencies on private code
 - Follows Go community standards
+- **Stateless controller pattern**: The controller package contains no authoritative state - it only reconciles external state from GitHub and Kubernetes
 
 ## Roadmap
 
@@ -205,9 +216,15 @@ This structure ensures:
 
 ## Technical Decisions
 
-- **PostgreSQL** for state (not etcd/Redis) - ACID guarantees, JSON support, single dependency
+- **Reconciliation-first architecture** - Continuous state reconciliation inspired by Kubernetes controllers
+  - Level-based primary: Poll external sources every 30s for eventual consistency
+  - Edge-based optimization: Webhooks trigger immediate reconciliation but aren't required
+  - No internal source of truth: GitHub defines what should exist, providers report what does exist
+- **PostgreSQL as event log** (not authoritative state) - Audit trails, coordination, metrics only
+  - System continues working if PostgreSQL is down
+  - External systems (GitHub, Kubernetes) are always authoritative
 - **gRPC** for provider plugins - Language agnostic, streaming support, process isolation
-- **Event-driven** architecture - Scalable, resilient, auditable
+- **Crash-only design** - No graceful shutdown needed, recovery is just normal startup
 - **Kubernetes-first** - Most complex target, proves the provider abstraction
 - **Zero-trust client model** - CLI is pure API client, all logic in ephd daemon
 
