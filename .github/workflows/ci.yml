@@ -175,6 +175,25 @@ jobs:
         run: |
           echo "⚠️  Database migrations will be added once database functionality is implemented"
 
+      - name: Start ephd server
+        run: |
+          ./bin/ephd-${{ matrix.goos }}-${{ matrix.goarch }} &
+          SERVER_PID=$!
+          trap "kill $SERVER_PID" EXIT
+          echo "Waiting for server to become healthy..."
+          max_attempts=${{ env.MAX_ATTEMPTS }}
+          attempt_num=0
+          until curl --fail --silent http://localhost:8080/health > /dev/null 2>&1; do
+            attempt_num=$((attempt_num+1))
+            if (( attempt_num == max_attempts )); then
+              echo "Server did not become healthy after $max_attempts attempts."
+              exit 1
+            fi
+            echo "Health check attempt $attempt_num/$max_attempts failed. Retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "Server is healthy."
+
       - name: Run integration tests
         run: |
           # Run our comprehensive integration tests
