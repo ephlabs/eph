@@ -33,3 +33,9 @@ go.work.sum
 
 # Binaries
 bin/
+
+# OS generated files
+.DS_Store
+
+# Task files
+_task.md
