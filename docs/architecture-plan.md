@@ -15,7 +15,7 @@ To maintain focus and avoid duplicating existing tools, Eph explicitly does not 
 
 **Replace local development tools**: Eph is not a substitute for Docker Compose, Air, or other local development workflows. Developers should continue using their preferred local tools.
 
-**Build container images**: Eph is an orchestrator, not a CI/CD pipeline. It expects container images to already exist in a registry. Image building should be handled by your existing CI system (GitHub Actions, GitLab CI, Jenkins, etc.).
+**Build container images**: Eph is an orchestrator, not a CI/CD pipeline. It expects container images to already exist in a registry, tagged according to conventions or with explicit references provided by your CI system. Image building should be handled by your existing CI system (GitHub Actions, GitLab CI, Jenkins, etc.). Eph provides flexible image discovery to work with any CI system's tagging approach.
 
 **Manage production environments**: Eph is specifically for ephemeral preview/test environments. Production deployments should use proper CD tools like ArgoCD or Flux.
 
@@ -30,6 +30,33 @@ An **ephemeral environment** is a temporary, isolated instance of an application
 A **provider** in Eph terminology is a plugin that knows how to create and manage environments on a specific infrastructure platform. The Kubernetes provider, for example, creates namespaces and deployments in a Kubernetes cluster, while a Docker Compose provider might spin up containers on a single host or Docker Swarm cluster.
 
 The **environment lifecycle** encompasses creation (triggered by a PR event), active use (developers testing features), idle periods (automatic scaling down), and eventual destruction (when the PR is merged or after a timeout).
+
+## Reconciliation Philosophy
+
+Eph embraces a **reconciliation-first architecture** inspired by Kubernetes controllers and proven in production systems. Rather than relying solely on event-driven updates, Eph continuously reconciles the desired state (pull requests with preview labels) against the actual state (running environments).
+
+**Level-Based Primary**: The core reconciliation loop observes external sources of truth every 30 seconds, ensuring eventual consistency even when webhooks are missed, systems are partitioned, or components crash.
+
+**Edge-Based Optimization**: Webhooks provide immediate responsiveness but are treated as hints to trigger reconciliation sooner, not as the primary source of truth.
+
+**No Internal Source of Truth**: Eph treats external systems as authoritative:
+- Git providers (GitHub/GitLab) define which environments should exist
+- Infrastructure providers (Kubernetes/Docker) report which environments actually exist
+- PostgreSQL serves only as an event log and cache, never as primary state
+
+This philosophy ensures Eph can recover from any failure scenario by simply restarting and reconciling current state.
+
+### The Power of Reconciliation
+
+This reconciliation-first architecture provides remarkable simplicity and reliability:
+
+- **No Split Brain**: Can't have inconsistent state when you don't store state
+- **No Lost Events**: Can't lose events when you don't rely on events
+- **No Race Conditions**: Can't have races when every operation is idempotent
+- **No Complex Recovery**: Startup is recovery, recovery is normal operation
+- **No Cascading Failures**: Each reconciliation is independent
+
+By embracing eventual consistency and external state, Eph achieves the reliability of distributed systems like Kubernetes while maintaining the simplicity of a single reconciliation loop.
 
 ## Example Use Cases
 
@@ -46,6 +73,8 @@ Eph excels at scenarios requiring isolated, temporary environments:
 **Customer Demos**: Spin up isolated environments for sales demos with specific feature flags or customizations.
 
 **Training and Workshops**: Create identical environments for each workshop participant without manual setup.
+
+**Integration Testing with Service Dependencies**: When a PR receives the "preview" label, Eph creates an environment for integration testing. The reconciliation loop waits for CI to build and push the required images, then deploys them. This enables testing service interactions in isolation - for example, deploying a new payment service version alongside stable versions of other services to verify API compatibility before merge.
 
 Eph is not designed for:
 
@@ -305,11 +334,59 @@ go test ./internal/server/ -tags=integration
 
 This structure provides a solid foundation for implementing the Eph system while maintaining Go best practices and enabling effective testing and maintenance.
 
-### Event Processing Flow
+### Reconciliation-Based Processing Flow
 
-When a developer creates a pull request with the appropriate label (e.g., "preview"), the Git provider sends a webhook to Eph's API Gateway. The Event Processor validates the webhook signature, extracts relevant information, and creates an environment provisioning job. This job enters a queue for processing by the Environment Orchestrator.
+Eph follows a continuous reconciliation pattern that ensures reliability through simplicity:
 
-The Orchestrator reads the project's `eph.yaml` configuration file from the repository to understand what type of environment to create. It then communicates with the appropriate provider plugin via gRPC to provision the actual resources. Throughout this process, the Orchestrator updates the environment state in PostgreSQL and can send status updates back to the Git provider as PR comments.
+```mermaid
+graph TB
+    subgraph "External Sources of Truth"
+        GitHub[GitHub API<br/>PR List + Labels]
+        K8s[Kubernetes API<br/>Namespaces + Deployments]
+    end
+
+    subgraph "Eph Core - Informer Pattern"
+        GHInformer[GitHub Informer<br/>Polls every 30s]
+        K8sInformer[K8s Informer<br/>Watches continuously]
+        Cache[In-Memory Cache<br/>Current state view]
+    end
+
+    subgraph "Reconciliation Engine"
+        Reconciler[Reconciler<br/>Compares desired vs actual]
+        Diff[Diff Calculator]
+        Actions[Action Executor<br/>Create/Update/Delete]
+    end
+
+    subgraph "Optional Components"
+        Webhooks[Webhook Handler<br/>Optional: Pokes reconciler<br/>No state, just a signal]
+        EventLog[PostgreSQL<br/>Event log only]
+    end
+
+    GitHub --> GHInformer
+    K8s --> K8sInformer
+    GHInformer --> Cache
+    K8sInformer --> Cache
+    Cache --> Reconciler
+    Reconciler --> Diff
+    Diff --> Actions
+    Actions --> K8s
+    Actions -.-> EventLog
+    Webhooks -.-> Reconciler
+```
+
+The reconciliation loop runs continuously:
+
+1. **Observe Desired State**: Query GitHub for PRs with the "preview" label
+2. **Observe Actual State**: Query Kubernetes for existing environments
+3. **Compute Differences**: Determine what needs to be created, updated, or deleted
+4. **Apply Changes**: Execute changes idempotently - safe to retry at any point
+5. **Log Events**: Record actions for audit/analytics (non-critical path)
+
+This approach handles all edge cases automatically:
+- Rapid label changes (add/remove/add)
+- Missed webhooks or network partitions
+- Component crashes at any point
+- Multiple ephd instances running
 
 ## REST API Design
 
@@ -348,6 +425,8 @@ Eph follows an API-first design where the ephd daemon exposes a comprehensive RE
 The provider plugin system is the core of Eph's extensibility. Each provider runs as a separate process and communicates with the core system via gRPC. This design offers several advantages over traditional in-process plugins: providers can be written in any language that supports gRPC, they can't crash the core system, and they can be developed and versioned independently.
 
 **Security Note**: Provider plugins run exclusively within the ephd daemon process or as trusted gRPC services. The eph CLI never directly communicates with providers - all provider operations are mediated by the ephd API layer.
+
+**Stateless Provider Design**: Providers in Eph are stateless - they report current state and execute operations but never store state. This aligns perfectly with the reconciliation model where the reconciler asks "what exists?" and "please create/update/delete this" without the provider needing to track anything.
 
 The gRPC interface defines a standard set of operations that all providers must implement:
 
@@ -393,75 +472,164 @@ message OperationUpdate {
 
 Each provider declares its capabilities when queried, allowing the core system to understand what features are available. For example, a Kubernetes provider might support scale-to-zero and custom domains, while a simpler Docker Compose provider might only support basic environment creation.
 
-### State Management
+### Image Resolution Strategy
 
-Eph uses PostgreSQL as its primary state store, chosen for its reliability, ACID compliance, and excellent support for JSON data types. The state store tracks all environments, their current status, configuration, and associated resources.
+Since Eph orchestrates environments but doesn't build images, it needs a flexible strategy to discover which container images to deploy for any given Git ref (PR, branch, or tag). The system supports multiple resolution strategies that can be combined for maximum compatibility with different CI/CD systems.
 
-```mermaid
-erDiagram
-    Environment ||--o{ Service : contains
-    Environment ||--o{ Database : contains
-    Environment ||--o{ DNSRecord : has
-    Environment {
-        uuid id PK
-        string name
-        string project_id
-        string repository
-        int pull_request_number
-        string provider_type
-        json provider_config
-        string status
-        json endpoints
-        timestamp created_at
-        timestamp last_active_at
-        timestamp ttl_expires_at
-        string created_by
-    }
+#### Image Discovery Methods
 
-    Service {
-        uuid id PK
-        uuid environment_id FK
-        string name
-        string image
-        json ports
-        json environment_vars
-        string status
-        json health_check
-    }
-
-    Database {
-        uuid id PK
-        uuid environment_id FK
-        string type
-        string version
-        string connection_string_ref
-        string template_source
-        json configuration
-        timestamp created_at
-    }
-
-    DNSRecord {
-        uuid id PK
-        uuid environment_id FK
-        string hostname
-        string record_type
-        string value
-        string provider
-        timestamp created_at
-    }
-
-    EnvironmentEvent ||--o{ Environment : tracks
-    EnvironmentEvent {
-        uuid id PK
-        uuid environment_id FK
-        string event_type
-        string description
-        json metadata
-        timestamp occurred_at
-    }
+**1. Convention-Based Tags**: CI systems push images with predictable tag patterns
+```yaml
+# eph.yaml
+environment:
+  images:
+    - name: api
+      repository: ghcr.io/myorg/myapp
+      tag_template: "{ref_type}-{ref_name}-{commit_sha:0:7}"
+      # Results in: pr-123-abc1234, branch-main-def5678, tag-v1.0.0-ghi9012
 ```
 
-The state management system handles distributed transactions using the Saga pattern. When creating an environment involves multiple steps (provision compute, create database, configure DNS), each step is tracked independently. If a step fails, compensating actions can be triggered to clean up any partially created resources.
+**2. Git Annotations**: CI systems communicate image locations via Git
+```bash
+# CI writes image location to git notes
+git notes add -m "eph-images: api=ghcr.io/myorg/api:pr-123-abc1234"
+git push origin refs/notes/*
+```
+
+**3. Status Check Integration**: Parse image refs from CI check outputs
+```yaml
+triggers:
+  - type: pr_label
+    labels: ["preview"]
+    wait_for_checks: ["docker-build"]  # Must complete first
+```
+
+**4. Registry Scanning**: Dynamically discover images by pattern matching
+```yaml
+images:
+  - name: api
+    repository: ghcr.io/myorg/api
+    tag_pattern: "pr-{pr_number}-*"  # Find newest matching
+    max_age: 7d                      # Don't use stale images
+```
+
+#### Resolution Priority
+
+Eph attempts each strategy in order until a valid image is found:
+
+1. **Explicit Git annotations** (most specific)
+2. **CI check outputs** (when integrated with CI)
+3. **Convention-based templates** (predictable patterns)
+4. **Registry scanning** (pattern matching)
+5. **Fallback tags** (last resort)
+
+This multi-strategy approach ensures Eph works with any CI system without requiring specific integrations.
+
+**Important**: Image resolution happens during reconciliation, not as a trigger. The reconciler:
+1. Determines an environment should exist (based on Git)
+2. Attempts to find the appropriate image
+3. Creates/updates the environment if image is found
+4. Marks environment as "WaitingForImage" if not found
+5. Retries on the next reconciliation cycle
+
+Images are dependencies, not triggers. Their existence never causes environment creation.
+
+### Informer Pattern and State Management
+
+Eph uses the Informer pattern popularized by Kubernetes to maintain an eventually-consistent view of external state without a central database.
+
+```go
+// Conceptual implementation
+type GitHubInformer struct {
+    client    *github.Client
+    cache     cache.Store        // Thread-safe in-memory store
+    resync    time.Duration      // How often to poll
+}
+
+type KubernetesInformer struct {
+    informer  cache.SharedIndexInformer  // K8s native informer
+    lister    listers.NamespaceLister    // Cached reads
+}
+
+type EnvironmentReconciler struct {
+    github     *GitHubInformer
+    kubernetes *KubernetesInformer
+    providers  map[string]provider.Provider
+}
+```
+
+Benefits of this approach:
+- **No Split Brain**: External systems are always authoritative
+- **Fast Reads**: All queries served from in-memory cache
+- **Crash Recovery**: Simply restart and re-sync from external state
+- **Natural Sharding**: Multiple ephd instances can reconcile different repos
+
+The Informer pattern is critical to Eph's reliability:
+
+**GitHubInformer**: Polls GitHub every 30 seconds for PRs/branches/tags
+- Caches the list of all PRs with 'preview' label
+- Provides consistent view even during GitHub outages
+- Never misses changes due to continuous polling
+
+**KubernetesInformer**: Uses native Kubernetes watch API
+- Maintains real-time cache of all Eph-managed resources
+- Receives immediate updates when resources change
+- Resync periodically to catch any missed events
+
+**No Persistent State**: The informers maintain only in-memory caches
+- On restart, caches are rebuilt from external sources
+- No risk of stale or inconsistent state
+- Natural crash recovery through re-synchronization
+
+### State Management Philosophy
+
+Eph follows a "stateless controller" pattern where PostgreSQL serves only non-critical roles:
+
+**Event Log** (Nice to Have):
+- Audit trail of all actions taken
+- Analytics on environment usage
+- Debugging failed operations
+- Can be lost without affecting correctness
+
+**Coordination** (For Multi-Instance):
+- Leader election ensures only one reconciler runs at a time
+- NOT for work distribution - there's no work queue
+- Prevents multiple instances from taking conflicting actions
+- If PostgreSQL is down, fall back to single-instance mode
+- System remains functional, just without HA
+
+**Never Stored in Database**:
+- Which environments should exist (always from Git)
+- Which environments do exist (always from providers)
+- Environment configuration (always from eph.yaml in Git)
+- Current environment status (always from providers)
+
+```sql
+-- Minimal schema focused on events and coordination
+CREATE TABLE events (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    timestamp   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    type        TEXT NOT NULL,  -- 'env_created', 'env_deleted', 'image_found', etc
+    environment TEXT NOT NULL,
+    repository  TEXT NOT NULL,
+    pr_number   INTEGER,
+    details     JSONB,
+    -- This is for analytics and debugging only
+    -- Deleting this entire table would not affect Eph's operation
+);
+
+CREATE TABLE coordination (
+    key         TEXT PRIMARY KEY,
+    holder      TEXT NOT NULL,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    -- Used only for leader election in multi-instance deployments
+);
+
+-- No environments table!
+-- No jobs table!
+-- No state machines!
+-- Git + Kubernetes = Source of Truth
+```
 
 ### Security Model
 
@@ -499,6 +667,18 @@ Eph implements security at multiple levels while maintaining developer-friendly 
 **Audit Logging**: All API actions and environment lifecycle events are logged with user identity, timestamp, action details, and outcome. This provides accountability, aids in debugging, and supports compliance requirements. Logs are structured for easy querying and can be exported to external logging systems.
 
 **Resource Isolation**: Each environment runs in its own Kubernetes namespace with appropriate RBAC policies, network policies, and resource quotas. This ensures environments cannot interfere with each other or exceed their allocated resources.
+
+### Crash-Only Security Design
+
+Security in Eph doesn't depend on graceful cleanup:
+
+**Automatic Secret Rotation**: Secrets have built-in TTLs and are never stored in ephd's memory beyond immediate use. Provider credentials are re-fetched from secret stores on each reconciliation loop.
+
+**Stateless Authentication**: All tokens are validated against external auth providers on every request. No session state means no session cleanup required.
+
+**Resource Quotas**: Kubernetes namespaces have hard resource limits that survive ephd crashes. Even if cleanup fails, resources are bounded.
+
+**Fail-Safe Cleanup**: The garbage collector runs continuously, not just on environment deletion. Orphaned resources are automatically detected and cleaned up.
 
 ### Trust Boundary Architecture
 
@@ -592,6 +772,48 @@ environment:
   env:
     APP_ENV: "preview"
     FEATURE_FLAGS: "preview-mode"
+
+  # Image resolution configuration
+  images:
+    - name: api
+      repository: ghcr.io/myorg/api
+
+      # Primary: Look for explicit image reference in git notes
+      tag_source: git_note
+      git_note_ref: "eph-images"
+
+      # Secondary: Use templated convention
+      tag_template: "{ref_type}-{ref_name}-{commit_sha:0:7}"
+      # Template variables:
+      # - {ref_type}: "pr", "branch", or "tag"
+      # - {ref_name}: "123", "main", "v1.0.0"
+      # - {pr_number}: "123" (for PRs)
+      # - {commit_sha}: full SHA
+      # - {commit_sha:0:7}: substring syntax
+      # - {branch_name}: sanitized branch name
+
+      # Tertiary: Scan registry for matching tags
+      tag_pattern: "pr-{pr_number}-*"
+
+      # Constraints
+      max_age: 7d              # Reject images older than 7 days
+      required_labels:         # Image must have these labels
+        - "eph.io/commit={commit_sha}"
+        - "eph.io/pr={pr_number}"
+
+      # Fallback
+      fallback_tag: "latest"   # Last resort
+      fallback_behavior: "fail" # or "use-fallback", "wait"
+
+    - name: frontend
+      repository: ghcr.io/myorg/frontend
+      # Simpler configuration for predictable CI
+      tag_template: "pr-{pr_number}"
+
+    - name: database-migrator
+      repository: ghcr.io/myorg/migrator
+      # Can use specific versions for tools
+      tag: "v2.1.0"  # Fixed version
 
 # Provider-specific configurations
 kubernetes:
@@ -880,6 +1102,119 @@ sequenceDiagram
 
 This separation of concerns keeps each tool focused on what it does best: CI builds and tests, Eph deploys and manages environments.
 
+### Reconciliation is Primary, Webhooks are Optimization
+
+While the diagram above shows the webhook flow for clarity, it's important to understand that **reconciliation is the primary mechanism**:
+
+1. **Without webhooks**: Eph would still create the environment within 30 seconds when the reconciliation loop runs
+2. **With webhooks**: The environment might be created within seconds as webhooks trigger immediate reconciliation
+3. **If webhook fails**: No problem - the next reconciliation loop catches it
+4. **If multiple webhooks fire**: No problem - reconciliation is idempotent
+
+The reconciliation loop ensures eventual consistency regardless of webhook delivery.
+
+### CI/CD Integration Requirements
+
+For Eph to successfully deploy environments, CI systems must:
+
+1. **Build and push images before triggering Eph**
+2. **Use predictable tagging conventions OR communicate image locations**
+3. **Include metadata in images for validation**
+
+#### Recommended CI Patterns
+
+**GitHub Actions Example**:
+```yaml
+name: Build for Eph
+on:
+  pull_request:
+    types: [opened, synchronize, labeled]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build and Push
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}-${GITHUB_SHA:0:7}"
+
+          docker build \
+            --label "eph.io/pr=${{ github.event.pull_request.number }}" \
+            --label "eph.io/commit=${{ github.sha }}" \
+            --label "eph.io/built-at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -t $IMAGE .
+
+          docker push $IMAGE
+
+      - name: Notify Eph
+        run: |
+          # Option 1: Git notes
+          git notes add -m "eph-image: $IMAGE"
+          git push origin refs/notes/*
+
+          # Option 2: PR comment (if using PR comments for triggering)
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "/eph deploy --image=$IMAGE"
+```
+
+**GitLab CI Example**:
+```yaml
+build-for-eph:
+  stage: build
+  only:
+    - merge_requests
+  script:
+    # Build with metadata
+    - |
+      docker build \
+        --label "eph.io/mr=$CI_MERGE_REQUEST_IID" \
+        --label "eph.io/commit=$CI_COMMIT_SHA" \
+        -t $CI_REGISTRY_IMAGE:mr-$CI_MERGE_REQUEST_IID-$CI_COMMIT_SHORT_SHA .
+
+    - docker push $CI_REGISTRY_IMAGE:mr-$CI_MERGE_REQUEST_IID-$CI_COMMIT_SHORT_SHA
+
+    # Also tag with predictable name for Eph
+    - docker tag $CI_REGISTRY_IMAGE:mr-$CI_MERGE_REQUEST_IID-$CI_COMMIT_SHORT_SHA \
+                 $CI_REGISTRY_IMAGE:mr-$CI_MERGE_REQUEST_IID
+    - docker push $CI_REGISTRY_IMAGE:mr-$CI_MERGE_REQUEST_IID
+```
+
+### Git as the Single Source of Truth for Triggers
+
+Eph uses Git refs (PR labels, branches, tags) as the **only** mechanism for triggering environment creation:
+
+```yaml
+# Examples of Git-based triggers
+triggers:
+  # PR with label
+  - type: pr_label
+    labels: ["preview", "demo"]
+
+  # Git branches matching pattern
+  - type: git_branch
+    pattern: "preview/*"
+
+  # Git tags matching pattern
+  - type: git_tag
+    pattern: "demo/*"
+```
+
+**What Git changes trigger:**
+- Add "preview" label to PR → Environment should be created
+- Remove "preview" label from PR → Environment should be destroyed
+- Push tag "demo/v1" → Environment should be created
+- Delete tag "demo/v1" → Environment should be destroyed
+
+**What does NOT trigger environment creation:**
+- CI building an image
+- Webhook from CI/CD system
+- Image appearing in registry
+- Manual API calls (unless they modify Git)
+
+This ensures a single, auditable source of truth for all environments.
+
 ### MVP Scope and Features
 
 The MVP implements these core capabilities:
@@ -887,6 +1222,8 @@ The MVP implements these core capabilities:
 **GitHub Pull Request Integration**: The system responds to webhooks from GitHub when pull requests are created or updated. Developers add a "preview" label to their PR, triggering environment creation. The system posts status updates back to the PR as comments, providing the environment URL when ready.
 
 **Kubernetes Environment Provisioning**: The MVP includes a built-in Kubernetes provider that creates isolated namespaces for each environment. It applies Kubernetes manifests from the repository, supports Kustomize overlays for environment-specific modifications, and handles image tag substitution to deploy the PR-specific build.
+
+**Image Resolution Logic**: The MVP implements a hybrid image resolution system that attempts multiple strategies to find the correct image for an environment. It validates image existence, age, and metadata before deployment. If no valid image is found, the environment enters a "WaitingForImage" state and retries on the next reconciliation loop.
 
 **DNS and Routing**: Environments are accessible via wildcard DNS subdomains (e.g., `myapp-pr-123.preview.company.com`). The system creates appropriate Ingress resources in Kubernetes and manages DNS records via Route53 or Cloudflare APIs.
 
@@ -919,61 +1256,120 @@ The MVP makes several pragmatic choices to reduce complexity:
 
 **Built-in Kubernetes Provider**: Rather than implementing the full gRPC provider interface, the Kubernetes provider is compiled into the core binary. This eliminates inter-process communication overhead and simplifies the initial implementation.
 
-**PostgreSQL for Everything**: The MVP uses PostgreSQL for state storage, job queuing (using SKIP LOCKED), and event storage. This eliminates additional infrastructure dependencies like Redis or message queues.
+**PostgreSQL for Logging Only**: The MVP uses PostgreSQL purely for event logging and audit trails. There's no job queue (reconciliation handles this), no environment state table (Git and Kubernetes are authoritative), and no critical dependency on the database. If PostgreSQL is down, Eph continues to function normally, just without audit logs.
 
 **Simplified Database Handling**: Environments either connect to existing databases using isolated schemas or run ephemeral PostgreSQL containers within the environment. No snapshotting or advanced templating in the MVP.
 
 **Basic Security Model**: API authentication uses simple bearer tokens generated through the web UI. Environment URLs use readable but non-guessable names (e.g., `gentle-stream-42`) to prevent enumeration while remaining user-friendly. Environment access is public by default to support sharing with stakeholders.
 
-### MVP Implementation Flow
+**Informer-Based Architecture**: The MVP implements simplified informers that poll GitHub every 30 seconds and watch Kubernetes continuously. This provides the same reliability benefits as full Kubernetes-style informers while keeping the implementation straightforward.
+
+**No Job Queue**: Unlike traditional architectures, there's no job queue or state machine. The reconciliation loop naturally handles all state transitions by continuously converging toward the desired state.
+
+**Crash-Only by Default**: The MVP assumes it can be killed at any time. All operations are idempotent, all state is external, and startup always begins with a full reconciliation.
+
+### MVP Reconciliation Flow
+
+The MVP implements a pure reconciliation model without job queues or complex state machines:
 
 ```mermaid
 sequenceDiagram
     participant Dev as Developer
     participant GH as GitHub
-    participant Eph as Eph Core
-    participant DB as PostgreSQL
+    participant Rec as Reconciler (every 30s)
     participant K8s as Kubernetes
-    participant DNS as DNS Provider
+    participant Reg as Registry
 
     Dev->>GH: Add 'preview' label to PR
-    GH->>Eph: Webhook: Pull request labeled
-    Eph->>DB: Store event
-    Eph->>GH: Acknowledge webhook
+    GH->>Rec: Webhook (optional optimization)
 
-    Note over Eph: Background processing begins
+    Note over Rec: Next reconciliation cycle
 
-    Eph->>DB: Claim job (SELECT FOR UPDATE SKIP LOCKED)
-    Eph->>GH: Fetch eph.yaml from PR branch
-    Eph->>Eph: Validate configuration
-    Eph->>Eph: Generate readable environment name
-    Eph->>DB: Create environment record
+    loop Every 30 seconds
+        Rec->>GH: List PRs with 'preview' label
+        GH-->>Rec: PR #123, #124, #126
 
-    Eph->>K8s: Create namespace
-    Eph->>K8s: Create ConfigMaps/Secrets
-    Eph->>K8s: Apply manifests
-    Eph->>K8s: Wait for deployments ready
+        Rec->>K8s: List managed namespaces
+        K8s-->>Rec: ns-123, ns-124 (missing ns-126)
 
-    K8s-->>Eph: Pods running
+        Rec->>Rec: Compute diff
+        Note over Rec: Need to create env for PR #126
 
-    Eph->>DNS: Create DNS record
-    DNS-->>Eph: Record created
+        Rec->>GH: Fetch eph.yaml for PR #126
+        Rec->>Reg: Check if image exists
 
-    Eph->>DB: Update environment status
-    Eph->>GH: Comment with environment URL
-    Note over GH: https://myapp-gentle-stream-42.preview.company.com
-
-    Dev->>Dev: Click URL to access environment
+        alt Image exists
+            Rec->>K8s: Create namespace, deploy
+            Rec->>GH: Comment with URL
+        else Image not ready
+            Rec->>Rec: Mark as "WaitingForImage"
+            Note over Rec: Will retry next cycle
+        end
+    end
 ```
 
-This implementation flow maps directly to the Go package structure described earlier:
-- Webhook handling in `internal/webhook`
-- Configuration parsing in `internal/config`
-- Kubernetes operations in `internal/providers/kubernetes`
-- State management in `internal/state`
-- DNS operations handled by provider plugins
+Key points:
+- No job queue - just a simple reconciliation loop
+- No database state tracking - Git and Kubernetes are the sources of truth
+- Webhooks only trigger faster reconciliation, they don't carry state
+- Every operation is idempotent and safe to retry
 
-Each component focuses on its specific responsibility while communicating through well-defined interfaces.
+The implementation centers on the reconciliation loop:
+- Informers in `internal/informers` maintain cached views of GitHub and Kubernetes
+- Reconciler in `internal/reconciler` computes and applies differences
+- Providers in `internal/providers` execute idempotent infrastructure operations
+- Webhooks in `internal/webhook` simply trigger reconciliation sooner
+
+### Reconciliation-First Implementation
+
+The MVP implements a simplified but production-ready reconciliation loop:
+
+```go
+// Simplified MVP reconciliation
+func (r *Reconciler) Reconcile(ctx context.Context) error {
+    // 1. List all PRs with 'preview' label
+    prs, err := r.github.ListPullRequests(ctx, "preview")
+    if err != nil {
+        return fmt.Errorf("list PRs: %w", err)
+    }
+
+    // 2. List all Kubernetes namespaces we manage
+    namespaces, err := r.k8s.ListNamespaces(ctx, "eph.io/managed=true")
+    if err != nil {
+        return fmt.Errorf("list namespaces: %w", err)
+    }
+
+    // 3. Build lookup maps
+    desired := make(map[string]*PullRequest)
+    for _, pr := range prs {
+        name := GenerateEnvironmentName(pr)
+        desired[name] = pr
+    }
+
+    actual := make(map[string]*Namespace)
+    for _, ns := range namespaces {
+        actual[ns.Name] = ns
+    }
+
+    // 4. Create missing environments
+    for name, pr := range desired {
+        if _, exists := actual[name]; !exists {
+            r.createEnvironment(ctx, pr)
+        }
+    }
+
+    // 5. Delete orphaned environments
+    for name := range actual {
+        if _, exists := desired[name]; !exists {
+            r.deleteEnvironment(ctx, name)
+        }
+    }
+
+    return nil
+}
+```
+
+This simple loop handles all edge cases through continuous reconciliation.
 
 ### MVP Code Structure
 
@@ -1054,6 +1450,25 @@ database:
 ```
 
 This approach ensures that every Eph PR is tested in a real Eph-managed environment, providing confidence in changes before merging.
+
+The Eph project will particularly benefit from testing crash recovery:
+
+```yaml
+# Additional dogfooding tests
+testing:
+  chaos:
+    # Randomly kill ephd during reconciliation
+    - name: chaos-monkey
+      schedule: "*/10 * * * *"  # Every 10 minutes
+      action: "kubectl delete pod -l app=ephd --random"
+
+    # Verify environments remain consistent
+    - name: consistency-check
+      schedule: "*/5 * * * *"   # Every 5 minutes
+      action: "./scripts/verify-environments.sh"
+```
+
+This ensures our crash-only design actually works under real conditions.
 
 ### Internal Testing Configuration
 
@@ -1162,15 +1577,189 @@ Polish the developer experience to make Eph a joy to use.
 
 **Advanced CLI Features**: Add shell completions and interactive prompts. Implement environment templates and blueprints. Build a TUI (terminal UI) for managing multiple environments. Create workflow automation commands.
 
+## Reliability Patterns
+
+Eph incorporates several reliability patterns proven in production systems:
+
+**1. Idempotent Everything**
+```go
+// Safe to call multiple times
+func CreateEnvironment(env Environment) error {
+    if exists(env) {
+        return UpdateEnvironment(env)
+    }
+    return actuallyCreate(env)
+}
+```
+
+**2. Crash-Only Components**
+- No graceful shutdown required for correctness
+- All state is external or reconstructible
+- Recovery is just normal startup
+
+**3. Level-Triggered Reconciliation**
+- Don't track what changed, observe current state
+- Don't queue events, compute needed actions
+- Don't save progress, operations are atomic
+
+**4. Fast Failure Recovery**
+```go
+func (s *Server) Run() error {
+    // Fail fast on startup
+    if err := s.validateProviderAccess(); err != nil {
+        return fmt.Errorf("provider access check: %w", err)
+    }
+
+    // But once running, never give up
+    for {
+        if err := s.reconciler.Reconcile(ctx); err != nil {
+            log.Error("Reconciliation failed, will retry", "error", err)
+            time.Sleep(time.Second) // Brief backoff
+            continue
+        }
+        time.Sleep(30 * time.Second) // Normal interval
+    }
+}
+```
+
+**5. Continuous Garbage Collection**
+- Don't wait for delete events
+- Scan for orphaned resources periodically
+- Clean up expired environments automatically
+
+```go
+// Garbage collection is part of normal reconciliation
+func (gc *GarbageCollector) CollectGarbage(ctx context.Context) error {
+    // 1. Find environments past their TTL
+    environments := gc.k8s.ListEnvironments(ctx)
+    for _, env := range environments {
+        if env.Age() > env.TTL {
+            gc.markForDeletion(env)
+        }
+    }
+
+    // 2. Find environments with no corresponding Git ref
+    gitRefs := gc.github.ListAllRefs(ctx)
+    for _, env := range environments {
+        if !gitRefs.Contains(env.SourceRef) {
+            // Git ref was deleted
+            gc.markForDeletion(env)
+        }
+    }
+
+    // 3. Clean up orphaned resources
+    // This handles cases where deletion partially failed
+    gc.cleanupOrphanedResources(ctx)
+
+    return nil
+}
+```
+
+**Key principle**: Garbage collection doesn't rely on delete events. It continuously ensures the actual state matches the desired state, including cleaning up environments that shouldn't exist.
+
+**6. Observability First**
+- Reconciliation metrics (duration, errors, actions taken)
+- Cache hit rates and sync latency
+- Provider API call rates and errors
+- Clear logs showing reconciliation decisions
+
+**7. Image Availability Resilience**
+```go
+// Images might not be ready immediately after PR creation
+func (r *Reconciler) handleImageNotReady(env Environment) error {
+    age := time.Since(env.CreatedAt)
+
+    if age < 10*time.Minute {
+        // Young environments wait for CI
+        env.Status = "WaitingForImage"
+        return nil  // Retry next reconciliation
+    }
+
+    if age < 30*time.Minute && env.Config.FallbackTag != "" {
+        // Fall back after reasonable wait
+        env.Status = "UsingFallbackImage"
+        env.UseImage(env.Config.FallbackTag)
+        return nil
+    }
+
+    // Old environments with no image are marked failed
+    env.Status = "ImageNotFound"
+    env.Error = "CI may have failed to build image"
+    return nil
+}
+```
+
+### Reconciliation Timing and Efficiency
+
+The reconciliation loop timing balances responsiveness with efficiency:
+
+**Default Timing**:
+- GitHub polling: Every 30 seconds
+- Kubernetes watch: Continuous (event-driven)
+- Full reconciliation: Every 30 seconds
+- Webhook-triggered: Immediate (sub-second)
+
+**Optimization Strategies**:
+```go
+// Intelligent polling based on activity
+func (r *Reconciler) determineNextSync() time.Duration {
+    if r.recentActivity() {
+        return 10 * time.Second  // More frequent during active development
+    }
+    if r.isWeekend() {
+        return 2 * time.Minute   // Less frequent on weekends
+    }
+    return 30 * time.Second      // Default interval
+}
+```
+
+**Preventing Thundering Herd**:
+- Multiple ephd instances use jittered start times
+- Reconciliation for different repos can be sharded
+- Rate limiting on external API calls
+- Caching reduces redundant API requests
+
+### Common Misconceptions About Eph's Architecture
+
+**"CI triggers Eph to create environments"**
+- **Wrong**: CI never triggers Eph. Git (via PR labels/tags/branches) is the only trigger.
+- **Right**: CI builds images. Eph watches Git, waits for images, then deploys.
+
+**"Eph stores environment state in PostgreSQL"**
+- **Wrong**: PostgreSQL never stores which environments exist or their status.
+- **Right**: Git defines what should exist, Kubernetes reports what does exist. PostgreSQL only stores event logs.
+
+**"Webhooks are required for Eph to work"**
+- **Wrong**: Webhooks are purely an optimization for responsiveness.
+- **Right**: The reconciliation loop runs every 30 seconds regardless. Webhooks just make it run sooner.
+
+**"Failed webhook delivery will cause missed environments"**
+- **Wrong**: Missed webhooks have no impact on correctness.
+- **Right**: The next reconciliation loop (within 30s) will detect and correct any differences.
+
+**"Eph needs a job queue to handle concurrent requests"**
+- **Wrong**: Traditional job queues add complexity and failure modes.
+- **Right**: The reconciliation pattern naturally handles all concurrency through idempotent operations.
+
 ## Technical Design Decisions
 
 ### Why gRPC for Provider Plugins?
 
 The choice of gRPC over alternatives like REST APIs or native Go plugins comes from several technical requirements. Providers need to stream logs and progress updates in real-time, which gRPC handles elegantly with its streaming RPC support. The strongly-typed protocol buffer definitions ensure compatibility between core and plugins. Language agnosticism allows provider developers to use their preferred languages - a Rust developer can build a provider without learning Go. Process isolation means a buggy provider can't crash the core system. The gRPC ecosystem provides excellent tooling for testing, debugging, and monitoring.
 
-### PostgreSQL as the State Store
+Additionally, the gRPC interface aligns perfectly with reconciliation-based design. Providers don't need to maintain state - they simply report current state and execute idempotent operations. The streaming interface allows providers to send progress updates during long-running operations without blocking the reconciliation loop.
 
-PostgreSQL serves as more than just a database - it's the backbone of Eph's consistency guarantees. Its ACID properties ensure environment state remains consistent even during failures. The powerful JSON support allows flexible provider configurations without schema migrations. Row-level locking enables safe concurrent operations on environments. LISTEN/NOTIFY can be used for real-time updates. The mature ecosystem provides battle-tested solutions for backup, replication, and high availability. Using PostgreSQL for job queuing (with SKIP LOCKED) eliminates the need for a separate message queue in the MVP.
+### PostgreSQL as Event Log and Coordinator
+
+PostgreSQL in Eph serves a fundamentally different role than in traditional architectures. Rather than storing authoritative state, it provides:
+
+**Event Streaming**: An append-only log of all actions taken, enabling audit trails, analytics, and debugging without being required for correctness.
+
+**Work Coordination**: When running multiple ephd instances, PostgreSQL provides simple distributed locking to prevent duplicate work without complex consensus protocols.
+
+**Metrics Storage**: Time-series data about environment usage, creation times, and resource consumption for capacity planning.
+
+The key insight: if PostgreSQL is unavailable, Eph continues to function correctly, just without audit logs or multi-instance coordination. The reconciliation loop ensures environments remain synchronized with Git regardless.
 
 ### Kubernetes-First Strategy
 
@@ -1179,6 +1768,17 @@ Starting with Kubernetes as the primary provider isn't just about market share. 
 ### Event-Driven Architecture
 
 The event-driven design provides several benefits for ephemeral environment management. Webhook events can be acknowledged quickly, providing good user experience even when provisioning is slow. The system can scale by adding more workers without architectural changes. Failed operations can be retried automatically with exponential backoff. The event log provides a complete audit trail of all operations. Components remain loosely coupled, making testing and evolution easier.
+
+### Image Resolution Without Building
+
+Eph's design principle of not building images requires a sophisticated resolution system. Rather than prescribing a single CI integration pattern, Eph supports multiple discovery methods that work with any CI system. This flexibility is achieved through:
+
+1. **Template-based conventions** that map Git refs to image tags
+2. **Git-native communication** via notes and tags
+3. **Registry introspection** to find matching images
+4. **Validation logic** to ensure images are recent and correct
+
+The reconciliation loop naturally handles the async nature of CI - if an image isn't ready, the environment simply waits until the next reconciliation finds it.
 
 ## Open Source Philosophy
 
