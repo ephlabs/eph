@@ -33,8 +33,19 @@ graph LR
     E --> F[Auto-cleanup on merge]
 ```
 
+**Reconciliation is Primary**: While webhooks provide immediate responsiveness, Eph's reconciliation loop runs every 30 seconds regardless. This means:
+- Environments are created within 30s even without webhooks
+- Missed webhooks have no impact on correctness
+- Multiple webhook deliveries are handled idempotently
+- Recovery from any failure is automatic
+
 **Key principles:**
-- Eph orchestrates environments, it doesn't build images (that's CI's job)
+- **Reconciliation-first**: Eph continuously reconciles desired state (PRs with labels) against actual state (running environments)
+- **Crash-only design**: No graceful shutdown needed - just restart and reconcile
+- **Stateless controller**: External systems (GitHub, Kubernetes) are the source of truth, not internal databases
+- **Git-driven triggers**: Only Git changes (PR labels, branches, tags) trigger environments - never CI webhooks or image pushes
+- **Orchestrates, doesn't build**: Eph discovers and deploys pre-built images using flexible resolution strategies
+- **CI-agnostic**: Works with any CI system through configurable image discovery patterns
 - Works with your existing infrastructure (Kubernetes, Docker, cloud providers)
 - Extensible via gRPC-based provider plugins
 - Secure by default with non-guessable URLs
@@ -43,25 +54,24 @@ graph LR
 
 ```mermaid
 graph TB
+    subgraph "External Sources of Truth"
+        GitHub[GitHub API<br/>PRs + Labels]
+        K8sAPI[Kubernetes API<br/>Namespaces + Deployments]
+    end
+
     subgraph "Untrusted Environment"
         CLI[eph CLI]
         WebUI[Web Browser UI]
     end
 
-    subgraph "Event Sources"
-        GH[GitHub Webhooks]
-        GL[GitLab Webhooks]
-        API[Direct API Calls]
-    end
-
     subgraph "Trusted Environment - ephd Daemon"
         RestAPI[REST API Server]
 
-        subgraph "Core Engine"
-            Gateway[API Gateway]
-            Events[Event Processor]
-            Orchestrator[Environment Orchestrator]
-            State[State Store<br/>PostgreSQL]
+        subgraph "Reconciliation Engine"
+            GHInformer[GitHub Informer<br/>Polls every 30s]
+            K8sInformer[K8s Informer<br/>Watches continuously]
+            Cache[In-Memory Cache<br/>Current state view]
+            Reconciler[Reconciler<br/>Compares desired vs actual]
         end
 
         subgraph "Provider Interface"
@@ -70,20 +80,27 @@ graph TB
             Docker[Docker Provider]
             Cloud[Cloud Providers<br/>ECS, Cloud Run, etc.]
         end
+
+        subgraph "Optional Components"
+            Webhooks[Webhook Handler<br/>Optional: Pokes reconciler<br/>No state, just a signal]
+            EventLog[PostgreSQL<br/>Event log only, not authoritative]
+        end
     end
 
     CLI -- "HTTPS" --> RestAPI
     WebUI -- "HTTPS" --> RestAPI
-    GH --> Gateway
-    GL --> Gateway
-    API --> Gateway
-    Gateway --> Events
-    Events --> Orchestrator
-    Orchestrator <--> State
-    Orchestrator <--> ProviderAPI
-    ProviderAPI <--> K8s
-    ProviderAPI <--> Docker
-    ProviderAPI <--> Cloud
+    GitHub --> GHInformer
+    K8sAPI --> K8sInformer
+    GHInformer --> Cache
+    K8sInformer --> Cache
+    Cache --> Reconciler
+    Reconciler --> ProviderAPI
+    ProviderAPI --> K8s
+    ProviderAPI --> Docker
+    ProviderAPI --> Cloud
+    Reconciler -.-> EventLog
+    Webhooks -.-> Reconciler
+    GitHub -.-> Webhooks
 ```
 
 **Important**: The eph CLI is a pure API client with zero direct access to infrastructure, databases, or providers. All operations flow through the ephd REST API.
@@ -106,13 +123,20 @@ environment:
   ttl: 72h
   idle_timeout: 4h
 
+  # Image resolution configuration
+  images:
+    - name: api
+      repository: ghcr.io/myorg/myapp
+      # Try multiple strategies to find the right image
+      tag_template: "pr-{pr_number}-{commit_sha:0:7}"  # CI convention
+      tag_pattern: "pr-{pr_number}-*"                   # Registry scan
+      max_age: 7d                                       # Validation
+      fallback_tag: "latest"                            # Last resort
+
 kubernetes:
   manifests:
     - ./k8s/base
     - ./k8s/overlays/preview
-  images:
-    - name: api
-      newTag: "pr-{pr_number}"
 
 database:
   enabled: true
@@ -124,6 +148,26 @@ database:
         seed:
           scripts: ["./db/schema.sql"]
 ```
+
+## CI/CD Integration
+
+Eph requires your CI system to build and push images before deployment. Here's how to integrate:
+
+### GitHub Actions Example
+```yaml
+- name: Build and Push
+  run: |
+    IMAGE="ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}-${GITHUB_SHA:0:7}"
+    docker build -t $IMAGE .
+    docker push $IMAGE
+```
+
+### Image Discovery
+Eph supports multiple methods to find your images:
+1. **Convention-based tags**: `pr-123-abc1234`
+2. **Git notes**: CI can write image locations to git
+3. **Registry scanning**: Find newest matching image
+4. **Fallback tags**: Use latest if nothing else works
 
 ## Current Status
 
@@ -146,13 +190,15 @@ eph/
 │   ├── cli/               # CLI command implementation
 │   ├── api/               # API client/server shared code
 │   ├── config/            # Configuration parsing and validation
-│   ├── controller/        # Environment orchestration logic
+│   ├── controller/        # Environment reconciliation logic (stateless)
+│   ├── reconciler/        # Core reconciliation loop implementation
+│   ├── informers/         # GitHub and Kubernetes informers (cache external state)
 │   ├── providers/         # Provider implementations
 │   │   ├── interface.go   # Provider interface
 │   │   └── kubernetes/    # Kubernetes provider
-│   ├── state/             # Database state management
+│   ├── state/             # Event logging (not authoritative state)
 │   ├── webhook/           # Git webhook handlers
-│   └── worker/            # Background job processing
+│   └── worker/            # Background reconciliation loops
 ├── pkg/                   # Exportable packages (use sparingly)
 │   └── version/           # Version information
 ├── web/                   # React dashboard
@@ -173,14 +219,15 @@ This structure ensures:
 - All business logic is testable
 - `internal/` prevents external dependencies on private code
 - Follows Go community standards
+- **Stateless controller pattern**: The controller package contains no authoritative state - it only reconciles external state from GitHub and Kubernetes
 
 ## Roadmap
 
 ### MVP (Current Focus)
-- [ ] Core event processing engine
+- [ ] Core reconciliation engine
 - [ ] Kubernetes provider (built-in)
 - [ ] GitHub webhook integration
-- [ ] PostgreSQL state management
+- [ ] PostgreSQL event logging (not state management)
 - [ ] Basic CLI (`eph list`, `eph logs`, `eph down`)
 - [ ] Minimal web dashboard
 
@@ -205,9 +252,21 @@ This structure ensures:
 
 ## Technical Decisions
 
-- **PostgreSQL** for state (not etcd/Redis) - ACID guarantees, JSON support, single dependency
+- **Reconciliation-first architecture** - Continuous state reconciliation inspired by Kubernetes controllers
+  - Level-based primary: Poll external sources every 30s for eventual consistency
+  - Edge-based optimization: Webhooks trigger immediate reconciliation but aren't required
+  - No internal source of truth: GitHub defines what should exist, providers report what does exist
+- **Flexible image resolution** - Multiple strategies to discover container images
+  - Template-based conventions map Git refs to image tags
+  - Git-native communication via notes and tags
+  - Registry introspection to find matching images
+  - Validation ensures images are recent and correct
+- **PostgreSQL for logging only** - Event logs, audit trails, and leader election
+  - No environment state stored - Git and Kubernetes are authoritative
+  - No job queue - reconciliation handles all work distribution
+  - System continues working if PostgreSQL is down
 - **gRPC** for provider plugins - Language agnostic, streaming support, process isolation
-- **Event-driven** architecture - Scalable, resilient, auditable
+- **Crash-only design** - No graceful shutdown needed, recovery is just normal startup
 - **Kubernetes-first** - Most complex target, proves the provider abstraction
 - **Zero-trust client model** - CLI is pure API client, all logic in ephd daemon
 
