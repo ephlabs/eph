@@ -185,7 +185,7 @@ jobs:
           attempt_num=0
           until curl --fail --silent http://localhost:8080/health > /dev/null 2>&1; do
             attempt_num=$((attempt_num+1))
-            if [ $attempt_num -eq $max_attempts ]; then
+            if (( attempt_num == max_attempts )); then
               echo "Server did not become healthy after $max_attempts attempts."
               exit 1
             fi
