@@ -236,35 +236,42 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Run gosec security scanner (human readable)
-        id: gosec-readable
-        uses: securego/gosec@master
-        with:
-          # First run: Generate human-readable output and fail if issues found
-          args: '-fmt table -verbose -exclude-generated ./...'
-        continue-on-error: true  # Don't stop workflow, but capture exit code
-
-      - name: Check gosec results and show actionable errors
+      - name: Install and run gosec security scanner
         run: |
-          if [ "${{ steps.gosec-readable.outcome }}" = "failure" ]; then
-            echo "❌ gosec found security issues in the table output above"
-            echo "================================================="
-            echo "💡 To reproduce locally:"
-            echo "   go install github.com/securego/gosec/v2/cmd/gosec@latest"
-            echo "   gosec -fmt table -verbose ./..."
-            echo "================================================="
-            echo "🚫 CI will fail due to security issues"
-            exit 1
-          else
+          # Install gosec using the Go version we already have (1.24.3)
+          echo "📦 Installing gosec..."
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+          echo "🔍 Running gosec security scanner..."
+          echo "================================================="
+
+          # Run gosec with table format for readable output
+          if gosec -fmt table -verbose -exclude-generated ./...; then
             echo "✅ gosec scan completed successfully - no security issues found"
+            scan_passed=true
+          else
+            echo "❌ gosec found security issues (shown in table above)"
+            scan_passed=false
           fi
 
-      - name: Generate SARIF report for GitHub Security
-        uses: securego/gosec@master
-        if: always()  # Always run to get SARIF, even if previous step failed
-        with:
-          # Second run: Generate SARIF for GitHub Security dashboard
-          args: '-no-fail -fmt sarif -out gosec-results.sarif -exclude-generated ./...'
+          echo ""
+          echo "================================================="
+          echo "💡 To reproduce locally:"
+          echo "   go install github.com/securego/gosec/v2/cmd/gosec@latest"
+          echo "   gosec -fmt table -verbose ./..."
+          echo "================================================="
+
+          # Generate SARIF for GitHub Security dashboard
+          echo "📤 Generating SARIF report for GitHub Security dashboard..."
+          gosec -fmt sarif -out gosec-results.sarif -exclude-generated ./... || true
+
+          # Exit with appropriate code
+          if [ "$scan_passed" = "false" ]; then
+            echo "🚫 CI failing due to security issues found above"
+            exit 1
+          else
+            echo "✅ All security checks passed!"
+          fi
 
       - name: Upload gosec results
         uses: github/codeql-action/upload-sarif@v3
