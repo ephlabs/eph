@@ -33,11 +33,19 @@ graph LR
     E --> F[Auto-cleanup on merge]
 ```
 
+**Reconciliation is Primary**: While webhooks provide immediate responsiveness, Eph's reconciliation loop runs every 30 seconds regardless. This means:
+- Environments are created within 30s even without webhooks
+- Missed webhooks have no impact on correctness
+- Multiple webhook deliveries are handled idempotently
+- Recovery from any failure is automatic
+
 **Key principles:**
 - **Reconciliation-first**: Eph continuously reconciles desired state (PRs with labels) against actual state (running environments)
 - **Crash-only design**: No graceful shutdown needed - just restart and reconcile
 - **Stateless controller**: External systems (GitHub, Kubernetes) are the source of truth, not internal databases
-- Eph orchestrates environments, it doesn't build images (that's CI's job)
+- **Git-driven triggers**: Only Git changes (PR labels, branches, tags) trigger environments - never CI webhooks or image pushes
+- **Orchestrates, doesn't build**: Eph discovers and deploys pre-built images using flexible resolution strategies
+- **CI-agnostic**: Works with any CI system through configurable image discovery patterns
 - Works with your existing infrastructure (Kubernetes, Docker, cloud providers)
 - Extensible via gRPC-based provider plugins
 - Secure by default with non-guessable URLs
@@ -74,8 +82,8 @@ graph TB
         end
 
         subgraph "Optional Components"
-            Webhooks[Webhook Handler<br/>Triggers immediate reconcile]
-            EventLog[PostgreSQL<br/>Event log + coordination]
+            Webhooks[Webhook Handler<br/>Optional: Pokes reconciler<br/>No state, just a signal]
+            EventLog[PostgreSQL<br/>Event log only, not authoritative]
         end
     end
 
@@ -115,13 +123,20 @@ environment:
   ttl: 72h
   idle_timeout: 4h
 
+  # Image resolution configuration
+  images:
+    - name: api
+      repository: ghcr.io/myorg/myapp
+      # Try multiple strategies to find the right image
+      tag_template: "pr-{pr_number}-{commit_sha:0:7}"  # CI convention
+      tag_pattern: "pr-{pr_number}-*"                   # Registry scan
+      max_age: 7d                                       # Validation
+      fallback_tag: "latest"                            # Last resort
+
 kubernetes:
   manifests:
     - ./k8s/base
     - ./k8s/overlays/preview
-  images:
-    - name: api
-      newTag: "pr-{pr_number}"
 
 database:
   enabled: true
@@ -133,6 +148,26 @@ database:
         seed:
           scripts: ["./db/schema.sql"]
 ```
+
+## CI/CD Integration
+
+Eph requires your CI system to build and push images before deployment. Here's how to integrate:
+
+### GitHub Actions Example
+```yaml
+- name: Build and Push
+  run: |
+    IMAGE="ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}-${GITHUB_SHA:0:7}"
+    docker build -t $IMAGE .
+    docker push $IMAGE
+```
+
+### Image Discovery
+Eph supports multiple methods to find your images:
+1. **Convention-based tags**: `pr-123-abc1234`
+2. **Git notes**: CI can write image locations to git
+3. **Registry scanning**: Find newest matching image
+4. **Fallback tags**: Use latest if nothing else works
 
 ## Current Status
 
@@ -156,7 +191,8 @@ eph/
 │   ├── api/               # API client/server shared code
 │   ├── config/            # Configuration parsing and validation
 │   ├── controller/        # Environment reconciliation logic (stateless)
-│   ├── informers/         # GitHub and Kubernetes informers
+│   ├── reconciler/        # Core reconciliation loop implementation
+│   ├── informers/         # GitHub and Kubernetes informers (cache external state)
 │   ├── providers/         # Provider implementations
 │   │   ├── interface.go   # Provider interface
 │   │   └── kubernetes/    # Kubernetes provider
@@ -188,10 +224,10 @@ This structure ensures:
 ## Roadmap
 
 ### MVP (Current Focus)
-- [ ] Core event processing engine
+- [ ] Core reconciliation engine
 - [ ] Kubernetes provider (built-in)
 - [ ] GitHub webhook integration
-- [ ] PostgreSQL state management
+- [ ] PostgreSQL event logging (not state management)
 - [ ] Basic CLI (`eph list`, `eph logs`, `eph down`)
 - [ ] Minimal web dashboard
 
@@ -220,9 +256,15 @@ This structure ensures:
   - Level-based primary: Poll external sources every 30s for eventual consistency
   - Edge-based optimization: Webhooks trigger immediate reconciliation but aren't required
   - No internal source of truth: GitHub defines what should exist, providers report what does exist
-- **PostgreSQL as event log** (not authoritative state) - Audit trails, coordination, metrics only
+- **Flexible image resolution** - Multiple strategies to discover container images
+  - Template-based conventions map Git refs to image tags
+  - Git-native communication via notes and tags
+  - Registry introspection to find matching images
+  - Validation ensures images are recent and correct
+- **PostgreSQL for logging only** - Event logs, audit trails, and leader election
+  - No environment state stored - Git and Kubernetes are authoritative
+  - No job queue - reconciliation handles all work distribution
   - System continues working if PostgreSQL is down
-  - External systems (GitHub, Kubernetes) are always authoritative
 - **gRPC** for provider plugins - Language agnostic, streaming support, process isolation
 - **Crash-only design** - No graceful shutdown needed, recovery is just normal startup
 - **Kubernetes-first** - Most complex target, proves the provider abstraction
