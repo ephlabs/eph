@@ -17,6 +17,12 @@ coverage.*
 *.coverprofile
 profile.cov
 
+# Test artifacts from enhanced testing
+*-tests.xml
+*-tests.json
+unit-tests.*
+integration-tests.*
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
