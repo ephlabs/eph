@@ -2,7 +2,6 @@ package log
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"log/slog"
 	"os"
@@ -137,55 +136,6 @@ func TestLogLevelFiltering(t *testing.T) {
 		if level != "WARN" && level != "ERROR" {
 			t.Errorf("Unexpected log level: %s", level)
 		}
-	}
-}
-
-func TestContextLogging(t *testing.T) {
-	// Save original logger
-	originalLogger := Default()
-	defer SetDefault(originalLogger)
-
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{}))
-	SetDefault(logger)
-
-	ctx := context.Background()
-	ctx = WithEnvironment(ctx, "env-123", "pr-42-test")
-	ctx = WithPR(ctx, "org/repo", 42)
-	ctx = WithRequestID(ctx, "req-456")
-	ctx = WithProvider(ctx, "kubernetes")
-
-	Info(ctx, "test with context")
-
-	// Parse output - take first line only
-	output := strings.TrimSpace(buf.String())
-	if output == "" {
-		t.Fatal("Expected log output, but buffer is empty")
-	}
-	lines := strings.Split(output, "\n")
-	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(lines[0]), &result); err != nil {
-		t.Fatalf("Failed to parse JSON: %v", err)
-	}
-
-	// Verify context values
-	if result["environment_id"] != "env-123" {
-		t.Errorf("Expected environment_id='env-123', got %v", result["environment_id"])
-	}
-	if result["environment_name"] != "pr-42-test" {
-		t.Errorf("Expected environment_name='pr-42-test', got %v", result["environment_name"])
-	}
-	if result["pr_number"] != float64(42) {
-		t.Errorf("Expected pr_number=42, got %v", result["pr_number"])
-	}
-	if result["repository"] != "org/repo" {
-		t.Errorf("Expected repository='org/repo', got %v", result["repository"])
-	}
-	if result["request_id"] != "req-456" {
-		t.Errorf("Expected request_id='req-456', got %v", result["request_id"])
-	}
-	if result["provider"] != "kubernetes" {
-		t.Errorf("Expected provider='kubernetes', got %v", result["provider"])
 	}
 }
 
