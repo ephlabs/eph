@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -93,8 +95,10 @@ func (h *PrettyHandler) Handle(_ context.Context, r slog.Record) error {
 		if f.File != "" {
 			// Show only relative path for readability
 			file := f.File
-			if idx := strings.LastIndex(file, "/eph/"); idx >= 0 {
-				file = file[idx+5:]
+			if wd, err := os.Getwd(); err == nil {
+				if rel, err := filepath.Rel(wd, file); err == nil && !strings.HasPrefix(rel, "..") {
+					file = rel
+				}
 			}
 			fmt.Fprintf(&buf, " %s", colorize(fmt.Sprintf("%s:%d", file, f.Line), colorGray))
 		}

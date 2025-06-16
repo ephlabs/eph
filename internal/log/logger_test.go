@@ -2,7 +2,9 @@ package log
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -89,8 +91,6 @@ func TestPrettyLogging(t *testing.T) {
 	logger.Error("error message", "fatal", true)
 
 	output := buf.String()
-
-	// Check for expected patterns
 	if !strings.Contains(output, "DEBUG") {
 		t.Error("Expected DEBUG in output")
 	}
@@ -104,7 +104,6 @@ func TestPrettyLogging(t *testing.T) {
 		t.Error("Expected ERROR in output")
 	}
 
-	// Check for color codes
 	if !strings.Contains(output, "\033[") {
 		t.Error("Expected ANSI color codes in output")
 	}
@@ -126,7 +125,6 @@ func TestLogLevelFiltering(t *testing.T) {
 		t.Errorf("Expected 2 log lines (warn and error), got %d", len(lines))
 	}
 
-	// Verify only warn and error were logged
 	for _, line := range lines {
 		var result map[string]interface{}
 		if err := json.Unmarshal([]byte(line), &result); err != nil {
@@ -143,15 +141,12 @@ func TestLogValuerTypes(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{}))
 
-	// Test Token redaction
 	token := Token("super-secret-token")
 	logger.Info("token test", "token", token)
 
-	// Test APIKey partial visibility
 	apiKey := APIKey("sk_test_1234567890abcdef")
 	logger.Info("api key test", "api_key", apiKey)
 
-	// Test Environment struct
 	env := Environment{
 		ID:       "env-123",
 		Name:     "test-env",
@@ -163,7 +158,6 @@ func TestLogValuerTypes(t *testing.T) {
 
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 
-	// Check token redaction
 	var tokenResult map[string]interface{}
 	if err := json.Unmarshal([]byte(lines[0]), &tokenResult); err != nil {
 		t.Fatalf("Failed to parse token JSON: %v", err)
@@ -172,7 +166,6 @@ func TestLogValuerTypes(t *testing.T) {
 		t.Errorf("Expected token to be redacted, got %v", tokenResult["token"])
 	}
 
-	// Check API key partial visibility
 	var apiKeyResult map[string]interface{}
 	if err := json.Unmarshal([]byte(lines[1]), &apiKeyResult); err != nil {
 		t.Fatalf("Failed to parse API key JSON: %v", err)
@@ -182,7 +175,6 @@ func TestLogValuerTypes(t *testing.T) {
 		t.Errorf("Expected api_key='%s', got %v", expectedKey, apiKeyResult["api_key"])
 	}
 
-	// Check environment struct - token should not appear
 	var envResult map[string]interface{}
 	if err := json.Unmarshal([]byte(lines[2]), &envResult); err != nil {
 		t.Fatalf("Failed to parse environment JSON: %v", err)
@@ -213,13 +205,11 @@ func TestConcurrentLogging(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Verify all logs were written
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 	if len(lines) != 100 {
 		t.Errorf("Expected 100 log lines, got %d", len(lines))
 	}
 
-	// Verify each line is valid JSON
 	seen := make(map[int]bool)
 	for _, line := range lines {
 		var result map[string]interface{}
@@ -231,7 +221,6 @@ func TestConcurrentLogging(t *testing.T) {
 		}
 	}
 
-	// Verify all goroutines logged
 	if len(seen) != 100 {
 		t.Errorf("Expected logs from 100 goroutines, got %d", len(seen))
 	}
@@ -242,17 +231,14 @@ func TestWithHelpers(t *testing.T) {
 	baseLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{}))
 	SetDefault(baseLogger)
 
-	// Test With helper
 	logger := With("service", "ephd", "version", "1.0.0")
 	logger.Info("with test")
 
-	// Test WithGroup helper
 	groupLogger := WithGroup("request")
 	groupLogger.Info("group test", "method", "GET", "path", "/api/v1/environments")
 
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 
-	// Check With attributes
 	var withResult map[string]interface{}
 	if err := json.Unmarshal([]byte(lines[0]), &withResult); err != nil {
 		t.Fatalf("Failed to parse with result JSON: %v", err)
@@ -264,7 +250,6 @@ func TestWithHelpers(t *testing.T) {
 		t.Errorf("Expected version='1.0.0', got %v", withResult["version"])
 	}
 
-	// Check WithGroup
 	var groupResult map[string]interface{}
 	if err := json.Unmarshal([]byte(lines[1]), &groupResult); err != nil {
 		t.Fatalf("Failed to parse group result JSON: %v", err)
@@ -286,7 +271,6 @@ func TestPrettyHandlerAttributes(t *testing.T) {
 	handler := NewPrettyHandler(&buf, &slog.HandlerOptions{})
 	logger := slog.New(handler)
 
-	// Test with various attribute types
 	logger.With("service", "ephd").Info("test message",
 		"string", "value",
 		"int", 42,
@@ -302,9 +286,7 @@ func TestPrettyHandlerAttributes(t *testing.T) {
 
 	output := buf.String()
 
-	// Strip ANSI color codes for easier testing
 	stripAnsi := func(str string) string {
-		// Simple ANSI code removal - remove \033[...m sequences
 		result := str
 		for {
 			start := strings.Index(result, "\033[")
@@ -322,7 +304,6 @@ func TestPrettyHandlerAttributes(t *testing.T) {
 
 	cleanOutput := stripAnsi(output)
 
-	// Check for expected content
 	if !strings.Contains(cleanOutput, "service=") {
 		t.Error("Expected 'service=' in output")
 	}
@@ -340,5 +321,126 @@ func TestPrettyHandlerAttributes(t *testing.T) {
 	}
 	if !strings.Contains(cleanOutput, "nested.key1") {
 		t.Error("Expected nested group attributes in output")
+	}
+}
+
+func TestPackageLevelContextFunctions(t *testing.T) {
+	originalLogger := Default()
+	defer SetDefault(originalLogger)
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	SetDefault(logger)
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		logFunc func(context.Context, string, ...any)
+		level   string
+		message string
+	}{
+		{"DebugContext", DebugContext, "DEBUG", "debug message"},
+		{"InfoContext", InfoContext, "INFO", "info message"},
+		{"WarnContext", WarnContext, "WARN", "warn message"},
+		{"ErrorContext", ErrorContext, "ERROR", "error message"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf.Reset()
+			tt.logFunc(ctx, tt.message, "key", "value")
+
+			var logEntry map[string]interface{}
+			if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
+				t.Fatalf("Failed to parse log output: %v", err)
+			}
+
+			if logEntry["level"] != tt.level {
+				t.Errorf("Expected level '%s', got %v", tt.level, logEntry["level"])
+			}
+			if logEntry["msg"] != tt.message {
+				t.Errorf("Expected message '%s', got %v", tt.message, logEntry["msg"])
+			}
+			if logEntry["key"] != "value" {
+				t.Errorf("Expected key 'value', got %v", logEntry["key"])
+			}
+		})
+	}
+}
+
+func TestRedactionTypeStringMethods(t *testing.T) {
+	token := Token("secret-token")
+	apiKey := APIKey("sk_test_1234567890abcdef")
+
+	if token.String() != "secret-token" {
+		t.Errorf("Expected Token.String() to return raw value, got %v", token.String())
+	}
+
+	if apiKey.String() != "sk_test_1234567890abcdef" {
+		t.Errorf("Expected APIKey.String() to return raw value, got %v", apiKey.String())
+	}
+}
+
+func TestLoggerCreationPaths(t *testing.T) {
+	oldPretty := os.Getenv("LOG_PRETTY")
+	defer os.Setenv("LOG_PRETTY", oldPretty)
+
+	// Test pretty handler creation
+	os.Setenv("LOG_PRETTY", "true")
+	prettyLogger := New()
+	if prettyLogger == nil {
+		t.Error("Expected logger to be created with pretty handler")
+	}
+
+	// Test JSON handler creation
+	os.Setenv("LOG_PRETTY", "false")
+	jsonLogger := New()
+	if jsonLogger == nil {
+		t.Error("Expected logger to be created with JSON handler")
+	}
+
+	// Test with unset environment variable
+	os.Unsetenv("LOG_PRETTY")
+	defaultLogger := New()
+	if defaultLogger == nil {
+		t.Error("Expected logger to be created with default handler")
+	}
+}
+
+func TestColorizeCustomLogLevel(t *testing.T) {
+	customLevel := slog.Level(12)
+	result := colorizeLevel(customLevel)
+
+	expected := fmt.Sprintf("%-5s", customLevel.String())
+	if result != expected {
+		t.Errorf("Expected custom level to use default format, got %v", result)
+	}
+}
+
+func TestFormatAttrEdgeCases(t *testing.T) {
+	var buf bytes.Buffer
+	handler := NewPrettyHandler(&buf, &slog.HandlerOptions{})
+	logger := slog.New(handler)
+
+	logger.Info("test message",
+		"empty_string", "",
+		"nil_value", nil,
+		"large_number", int64(9223372036854775807),
+		"small_float", 0.000001,
+		"bool_false", false,
+		"json_string", `{"key": "value"}`,
+	)
+
+	output := buf.String()
+
+	if !strings.Contains(output, "test message") {
+		t.Error("Expected log message in output")
+	}
+	if !strings.Contains(output, "large_number") {
+		t.Error("Expected large number attribute in output")
+	}
+	if !strings.Contains(output, "bool_false") {
+		t.Error("Expected boolean attribute in output")
 	}
 }
