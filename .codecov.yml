@@ -1,0 +1,59 @@
+codecov:
+  require_ci_to_pass: yes
+  notify:
+    after_n_builds: 1
+    wait_for_ci: yes
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+
+  status:
+    project:
+      default:
+        target: 75%
+        threshold: 2%
+        if_no_uploads: error
+        if_not_found: success
+        if_ci_failed: error
+    patch:
+      default:
+        target: 80%
+        threshold: 5%
+        if_no_uploads: error
+        if_not_found: success
+        if_ci_failed: error
+
+  ignore:
+    - "**/*_test.go"
+    - "**/*.pb.go"
+    - "**/*_gen.go"
+    - "**/*_generated.go"
+    - "**/mock_*.go"
+    - "**/*_mock.go"
+    - "examples/**"
+    - "docs/**"
+    - "vendor/**"
+    - "**/testdata/**"
+    - "cmd/**/main.go"
+
+comment:
+  layout: "reach,diff,flags,tree,footer"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+  branches:
+    - main
+
+github_checks:
+  annotations: true
+
+parsers:
+  gcov:
+    branch_detection:
+      conditional: yes
+      loop: yes
+      method: no
+      macro: no

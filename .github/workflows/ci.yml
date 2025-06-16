@@ -67,25 +67,64 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           # Caching is automatic in v5
 
-      - name: Run database migrations
-        env:
-          DATABASE_URL: postgres://eph_test:eph_test@localhost:5432/eph_test?sslmode=disable
+      - name: Skip database migrations (not implemented yet)
         run: |
-          go run ./cmd/ephd migrate up
-          go run ./cmd/ephd migrate status
+          echo "⚠️  Database migrations will be added once database functionality is implemented"
 
-      - name: Run tests
-        env:
-          DATABASE_URL: postgres://eph_test:eph_test@localhost:5432/eph_test?sslmode=disable
+      - name: Install test tools
         run: |
-          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          # Install gotestsum for better test output and JUnit XML generation
+          go install gotest.tools/gotestsum@latest
+
+      - name: Run tests with enhanced output
+        run: |
+          # Use gotestsum for beautiful test output + coverage + JUnit XML
+          gotestsum \
+            --format=pkgname-and-test-fails \
+            --junitfile=unit-tests.xml \
+            --jsonfile=unit-tests.json \
+            -- \
+            -race \
+            -coverprofile=coverage.txt \
+            -covermode=atomic \
+            -coverpkg=./... \
+            -tags='!integration' \
+            ./...
+
+      - name: Generate coverage report summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "📊 Coverage Report Summary:"
+          go tool cover -func=coverage.txt | tail -1
+
+
+      - name: Test Summary Report
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: "unit-tests.xml"
+          show: "fail, skip"
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            unit-tests.xml
+            unit-tests.json
+            coverage.txt
+          retention-days: 7
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          file: ./coverage.out
+          file: ./coverage.txt
+          flags: unittests
+          name: eph-coverage
           fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}  # Required for v4
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
 
   build:
     name: Build
@@ -167,6 +206,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
       - name: Download ephd binary
         uses: actions/download-artifact@v4
         with:
@@ -176,19 +220,54 @@ jobs:
       - name: Make binaries executable
         run: chmod +x bin/*
 
-      - name: Run database migrations
-        env:
-          DATABASE_URL: postgres://eph_test:eph_test@localhost:5432/eph_test?sslmode=disable
+      - name: Skip database migrations (not implemented yet)
         run: |
-          ./bin/ephd-${{ matrix.goos }}-${{ matrix.goarch }} migrate up
+          echo "⚠️  Database migrations will be added once database functionality is implemented"
 
-      - name: Test ephd binary
+      - name: Install test tools
         run: |
-          # Test that ephd binary runs (currently just prints and exits)
-          ./bin/ephd-${{ matrix.goos }}-${{ matrix.goarch }}
+          go install gotest.tools/gotestsum@latest
 
-          # TODO: Add server tests once server is implemented
-          echo "⚠️  Server integration tests will be added once ephd server is implemented"
+      - name: Start ephd server
+        run: |
+          ./bin/ephd-${{ matrix.goos }}-${{ matrix.goarch }} &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+          trap "kill $SERVER_PID" EXIT
+          echo "Waiting for server to become healthy..."
+          max_attempts=30
+          attempt_num=0
+          until curl --fail --silent http://localhost:8080/health > /dev/null 2>&1; do
+            attempt_num=$((attempt_num+1))
+            if (( attempt_num == max_attempts )); then
+              echo "Server did not become healthy after $max_attempts attempts."
+              exit 1
+            fi
+            echo "Health check attempt $attempt_num/$max_attempts failed. Retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "Server is healthy."
+
+      - name: Run integration tests with enhanced output
+        run: |
+          # Run integration tests with gotestsum
+          gotestsum \
+            --format=testname \
+            --junitfile=integration-tests.xml \
+            --jsonfile=integration-tests.json \
+            -- \
+            -race \
+            -coverprofile=integration-coverage.out \
+            -covermode=atomic \
+            -tags=integration \
+            ./internal/server/...
+
+      - name: Integration Test Summary
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: "integration-tests.xml"
+          show: "fail, skip"
 
       - name: Test eph CLI
         run: |
@@ -198,8 +277,28 @@ jobs:
           # Test CLI help command
           ./bin/eph-${{ matrix.goos }}-${{ matrix.goarch }} --help
 
-          # TODO: Add API tests once server is implemented
-          echo "⚠️  API integration tests will be added once ephd server is implemented"
+          echo "✅ eph CLI tests passed"
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: |
+            integration-tests.xml
+            integration-tests.json
+            integration-coverage.out
+          retention-days: 7
+
+      - name: Upload integration coverage to Codecov
+        if: always() && hashFiles('integration-coverage.out') != ''
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./integration-coverage.out
+          flags: integration
+          name: eph-integration-coverage
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   security-scan:
     name: Security Scan
@@ -207,6 +306,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.20.0
@@ -222,15 +326,49 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
+      - name: Install and run gosec security scanner
+        run: |
+          # Install gosec using the Go version we already have (1.24.3)
+          echo "📦 Installing gosec..."
 
-      - name: Run gosec security scanner
-        uses: securego/gosec@master
-        with:
-          args: '-fmt sarif -out gosec-results.sarif ./...'
+          # Try go install first, fall back to curl method if it fails
+          if ! go install github.com/securego/gosec/v2/cmd/gosec@latest; then
+            echo "⚠️ go install failed, trying curl method..."
+            curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+            export PATH=$PATH:$(go env GOPATH)/bin
+          fi
+
+          echo "🔍 Running gosec security scanner..."
+          echo "================================================="
+
+          # Run gosec with table format for readable output
+          if gosec -fmt table -verbose -exclude-generated ./...; then
+            echo "✅ gosec scan completed successfully - no security issues found"
+            scan_passed=true
+          else
+            echo "❌ gosec found security issues (shown in table above)"
+            scan_passed=false
+          fi
+
+          echo ""
+          echo "================================================="
+          echo "💡 To reproduce locally:"
+          echo "   go install github.com/securego/gosec/v2/cmd/gosec@latest"
+          echo "   # OR: curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s latest"
+          echo "   gosec -fmt table -verbose ./..."
+          echo "================================================="
+
+          # Generate SARIF for GitHub Security dashboard
+          echo "📤 Generating SARIF report for GitHub Security dashboard..."
+          gosec -fmt sarif -out gosec-results.sarif -exclude-generated ./... || true
+
+          # Exit with appropriate code
+          if [ "$scan_passed" = "false" ]; then
+            echo "🚫 CI failing due to security issues found above"
+            exit 1
+          else
+            echo "✅ All security checks passed!"
+          fi
 
       - name: Upload gosec results
         uses: github/codeql-action/upload-sarif@v3
