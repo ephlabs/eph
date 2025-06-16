@@ -47,11 +47,11 @@ clean:
 # Development targets
 run-daemon:
 	@echo "🚀 Starting ephd daemon..."
-	go run $(LDFLAGS) ./cmd/ephd
+	LOG_PRETTY=true LOG_LEVEL=debug go run $(LDFLAGS) ./cmd/ephd
 
 run-cli:
 	@echo "💻 Running eph CLI..."
-	go run $(LDFLAGS) ./cmd/eph
+	LOG_PRETTY=true LOG_LEVEL=debug go run $(LDFLAGS) ./cmd/eph
 
 # Linting
 lint:

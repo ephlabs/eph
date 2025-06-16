@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/ephlabs/eph/internal/log"
 )
 
 type Server struct {
@@ -57,7 +58,11 @@ func (s *Server) Start() error {
 	s.httpServer = server
 	s.mu.Unlock()
 
-	log.Printf("Starting Eph daemon on %s", s.config.Port)
+	log.Info(context.Background(), "Starting Eph daemon",
+		"port", s.config.Port,
+		"read_timeout", s.config.ReadTimeout,
+		"write_timeout", s.config.WriteTimeout,
+		"idle_timeout", s.config.IdleTimeout)
 	return server.ListenAndServe()
 }
 
@@ -79,12 +84,12 @@ func Run() error {
 
 	go func() {
 		<-c
-		log.Println("Shutting down gracefully...")
+		log.Info(context.Background(), "Shutting down gracefully", "timeout", 30*time.Second)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		if err := server.Shutdown(ctx); err != nil {
-			log.Printf("Server shutdown error: %v", err)
+			log.Error(context.Background(), "Server shutdown error", "error", err)
 		}
 	}()
 
@@ -99,6 +104,8 @@ func (s *Server) jsonResponse(w http.ResponseWriter, status int, data interface{
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("Failed to encode JSON response: %v", err)
+		log.Error(context.Background(), "Failed to encode JSON response",
+			"error", err,
+			"status", status)
 	}
 }

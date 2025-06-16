@@ -1,14 +1,19 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/ephlabs/eph/internal/log"
 )
 
 func TestHealthHandler(t *testing.T) {
@@ -319,4 +324,116 @@ func BenchmarkMiddlewareStack(b *testing.B) {
 		w := httptest.NewRecorder()
 		wrapped.ServeHTTP(w, req)
 	}
+}
+
+// Tests for structured logging implementation
+
+func TestServerStartLogging(t *testing.T) {
+	// Save original logger
+	originalLogger := log.Default()
+	defer log.SetDefault(originalLogger)
+
+	// Capture logs
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{}))
+	log.SetDefault(logger)
+
+	server := New(&Config{Port: ":0"}) // Use port 0 for testing
+
+	// Start server in goroutine since it blocks
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- server.Start()
+	}()
+
+	// Give server time to start and log
+	time.Sleep(100 * time.Millisecond)
+
+	// Shutdown immediately
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_ = server.Shutdown(ctx)
+
+	// Wait for server to stop
+	select {
+	case <-serverErr:
+	case <-time.After(2 * time.Second):
+		t.Error("Server did not stop in time")
+	}
+
+	// Check logs
+	logOutput := strings.TrimSpace(buf.String())
+	if logOutput == "" {
+		t.Fatal("Expected server start to be logged")
+	}
+
+	// There might be multiple log lines from middleware, get the first one
+	lines := strings.Split(logOutput, "\n")
+	var logEntry map[string]interface{}
+	if err := json.Unmarshal([]byte(lines[0]), &logEntry); err != nil {
+		t.Fatalf("Failed to parse log JSON: %v", err)
+	}
+
+	// Verify structured log fields
+	if msg, ok := logEntry["msg"]; !ok || !strings.Contains(msg.(string), "Starting") {
+		t.Errorf("Expected startup message in log, got: %v", logEntry)
+	}
+
+	if port, ok := logEntry["port"]; !ok || port != ":0" {
+		t.Errorf("Expected port=':0' in log, got: %v", port)
+	}
+}
+
+func TestJSONResponseLogging(t *testing.T) {
+	// Capture logs
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{}))
+	log.SetDefault(logger)
+
+	server := New(nil)
+
+	// Test successful JSON encoding
+	t.Run("successful encoding", func(t *testing.T) {
+		buf.Reset()
+		w := httptest.NewRecorder()
+		data := map[string]string{"message": "success"}
+
+		server.jsonResponse(w, http.StatusOK, data)
+
+		// Should not log anything on success
+		if buf.Len() > 0 {
+			t.Error("Expected no logs on successful JSON encoding")
+		}
+	})
+
+	// Test JSON encoding error
+	t.Run("encoding error", func(t *testing.T) {
+		buf.Reset()
+		w := httptest.NewRecorder()
+
+		// Create data that will fail JSON encoding
+		badData := make(chan int) // channels can't be JSON encoded
+
+		server.jsonResponse(w, http.StatusOK, badData)
+
+		// Should log the error - this will fail until we implement structured logging
+		logOutput := strings.TrimSpace(buf.String())
+		if logOutput == "" {
+			t.Fatal("Expected JSON encoding error to be logged")
+		}
+
+		var logEntry map[string]interface{}
+		if err := json.Unmarshal([]byte(logOutput), &logEntry); err != nil {
+			t.Fatalf("Failed to parse log JSON: %v", err)
+		}
+
+		// Verify structured log fields
+		if level := logEntry["level"]; level != "ERROR" {
+			t.Errorf("Expected ERROR level, got: %v", level)
+		}
+
+		if msg, ok := logEntry["msg"]; !ok || !strings.Contains(msg.(string), "JSON") {
+			t.Errorf("Expected JSON error message, got: %v", msg)
+		}
+	})
 }
