@@ -95,8 +95,8 @@ func (h *PrettyHandler) Handle(_ context.Context, r slog.Record) error {
 		if f.File != "" {
 			// Show only relative path for readability
 			file := f.File
-			if wd, err := os.Getwd(); err == nil {
-				if rel, err := filepath.Rel(wd, file); err == nil && !strings.HasPrefix(rel, "..") {
+			if h.workingDir != "" {
+				if rel, err := filepath.Rel(h.workingDir, file); err == nil && !strings.HasPrefix(rel, "..") {
 					file = rel
 				}
 			}
