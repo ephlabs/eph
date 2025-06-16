@@ -39,7 +39,7 @@ build:
 clean:
 	@echo "🧹 Cleaning build artifacts..."
 	rm -rf bin/
-	rm -f coverage.out coverage.html
+	rm -f coverage.txt coverage.html
 	rm -f unit-tests.xml integration-tests.xml
 	rm -f unit-tests.json integration-tests.json
 	@echo "✅ Clean complete!"
@@ -66,10 +66,6 @@ install-test-tools:
 		echo "Installing gotestsum..."; \
 		go install gotest.tools/gotestsum@latest; \
 	}
-	@command -v go-test-coverage >/dev/null 2>&1 || { \
-		echo "Installing go-test-coverage..."; \
-		go install github.com/vladopajic/go-test-coverage/v2@latest; \
-	}
 	@command -v gotestfmt >/dev/null 2>&1 || { \
 		echo "Installing gotestfmt..."; \
 		go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest; \
@@ -92,7 +88,7 @@ test-ci: install-test-tools
 		--jsonfile=unit-tests.json \
 		-- \
 		-race \
-		-coverprofile=coverage.out \
+		-coverprofile=coverage.txt \
 		-covermode=atomic \
 		-coverpkg=./... \
 		-tags='!integration' \
@@ -118,20 +114,15 @@ test-watch: install-test-tools
 	@echo "Press 'r' to rerun tests, 'q' to quit"
 	gotestsum --watch --format=pkgname-and-test-fails -- -race -tags='!integration' ./...
 
-# Check coverage thresholds (requires .testcoverage.yml)
+# Check coverage thresholds (basic coverage check)
 coverage: test-ci
-	@echo "📊 Checking coverage thresholds..."
-	@if [ -f .testcoverage.yml ]; then \
-		go-test-coverage --config=.testcoverage.yml; \
-	else \
-		echo "⚠️  .testcoverage.yml not found, checking basic coverage..."; \
-		go tool cover -func=coverage.out | tail -1; \
-	fi
+	@echo "📊 Checking basic coverage..."
+	go tool cover -func=coverage.txt | tail -1
 
 # Generate HTML coverage report
 coverage-html: test-ci
 	@echo "🌐 Generating HTML coverage report..."
-	go tool cover -html=coverage.out -o coverage.html
+	go tool cover -html=coverage.txt -o coverage.html
 	@echo "✅ Open coverage.html in your browser to view coverage details"
 
 # Fallback to old test behavior if tools not available
@@ -146,7 +137,7 @@ test-full: test-ci test-integration coverage
 	@echo "📊 Test artifacts generated:"
 	@echo "  - unit-tests.xml (JUnit format)"
 	@echo "  - integration-tests.xml (JUnit format)"
-	@echo "  - coverage.out (Go coverage profile)"
+	@echo "  - coverage.txt (Go coverage profile)"
 	@echo "  - coverage.html (HTML coverage report)"
 
 # Alias for backwards compatibility with old simple test

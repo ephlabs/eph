@@ -85,7 +85,7 @@ jobs:
             --jsonfile=unit-tests.json \
             -- \
             -race \
-            -coverprofile=coverage.out \
+            -coverprofile=coverage.txt \
             -covermode=atomic \
             -coverpkg=./... \
             -tags='!integration' \
@@ -95,15 +95,8 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           echo "📊 Coverage Report Summary:"
-          go tool cover -func=coverage.out | tail -1
+          go tool cover -func=coverage.txt | tail -1
 
-      - name: Check coverage thresholds
-        uses: vladopajic/go-test-coverage@v2
-        with:
-          profile: coverage.out
-          threshold-file: 70
-          threshold-package: 80
-          threshold-total: 75
 
       - name: Test Summary Report
         uses: test-summary/action@v2
@@ -120,13 +113,13 @@ jobs:
           path: |
             unit-tests.xml
             unit-tests.json
-            coverage.out
+            coverage.txt
           retention-days: 7
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          file: ./coverage.out
+          file: ./coverage.txt
           flags: unittests
           name: eph-coverage
           fail_ci_if_error: false

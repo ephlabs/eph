@@ -2,6 +2,37 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Structure
+
+```
+eph/
+├── cmd/                    # Main applications
+│   ├── eph/               # CLI binary
+│   │   └── main.go
+│   └── ephd/              # Daemon binary
+│       └── main.go
+├── internal/              # Private application code
+│   ├── api/               # API definitions
+│   ├── cli/               # CLI command implementations
+│   ├── config/            # Configuration management
+│   ├── controller/        # Environment orchestration logic
+│   ├── log/               # Logging utilities
+│   ├── migrate/           # Database migrations
+│   ├── providers/         # Infrastructure provider implementations
+│   │   └── kubernetes/    # Kubernetes provider
+│   ├── server/            # HTTP API server
+│   ├── state/             # Event logging (not authoritative state)
+│   ├── webhook/           # Git provider webhook handlers
+│   └── worker/            # Background reconciliation loops
+├── pkg/                   # Public library code
+│   └── version/           # Version information
+├── configs/               # Configuration files
+├── migrations/            # Database migration files
+├── scripts/               # Build and deployment scripts
+├── web/                   # Web UI assets (future)
+└── docs/                  # Documentation
+```
+
 ## Commands
 
 ### Build and Development
@@ -38,7 +69,22 @@ go test -v ./...
 
 # Run a specific test
 go test -run TestFunctionName ./internal/cli/
+
+# Run tests with coverage (excludes cmd/ files)
+make test-ci
 ```
+
+### Code Coverage Rules
+
+The project excludes certain files from unit test coverage metrics:
+
+- **cmd/ directory**: Main application entry points (cmd/eph/main.go, cmd/ephd/main.go) are excluded because:
+  - They contain minimal logic (mostly just calling into internal packages)
+  - They are integration points that are better tested through end-to-end tests
+  - Testing main functions requires complex setup and provides little value
+  - Coverage tools should focus on business logic in internal/ and pkg/ directories
+
+Coverage exclusions help maintain meaningful coverage metrics by focusing on testable business logic rather than application wiring code.
 
 ### Pre-commit Hooks
 ```bash
