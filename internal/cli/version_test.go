@@ -11,19 +11,16 @@ import (
 )
 
 func TestVersionCommand(t *testing.T) {
-	// Save and restore stdout
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	// Execute the command
 	rootCmd.SetArgs([]string{"version"})
 	err := rootCmd.Execute()
 	if err != nil {
 		t.Errorf("version command failed: %v", err)
 	}
 
-	// Restore stdout and capture output
 	w.Close()
 	os.Stdout = oldStdout
 

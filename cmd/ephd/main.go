@@ -9,7 +9,6 @@ import (
 )
 
 func main() {
-	// Initialize structured logging
 	logger := log.New()
 	log.SetDefault(logger)
 

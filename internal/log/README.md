@@ -80,21 +80,23 @@ Use the provided types for automatic redaction:
 ```go
 // Define sensitive fields
 type Config struct {
-    APIKey   log.APIKey   `json:"api_key"`
-    Password log.Password `json:"-"`
-    Email    log.Email    `json:"email"`
+    APIKey log.APIKey `json:"api_key"`
+    Token  log.Token  `json:"-"`
 }
 
 config := Config{
-    APIKey:   log.APIKey("sk_test_1234567890abcdef"),
-    Password: log.Password("super-secret"),
-    Email:    log.Email("user@example.com"),
+    APIKey: log.APIKey("sk_test_1234567890abcdef"),
+    Token:  log.Token("secret-auth-token"),
 }
 
 log.Info("Config loaded", "config", config)
 // Output:
-// JSON: {"msg":"Config loaded","config":{"api_key":"sk_t...cdef","email":"u***@example.com"}}
-// Pretty: Config loaded config={api_key="sk_t...cdef" email="u***@example.com"}
+// JSON: {"msg":"Config loaded","config":{"api_key":"sk_t...cdef"}}
+// Pretty: Config loaded config={api_key="sk_t...cdef"}
+
+// Direct logging of sensitive values
+log.Info("Authentication", "token", log.Token("secret-123"))
+// Output: {"msg":"Authentication","token":"[REDACTED_TOKEN]"}
 ```
 
 ### Custom LogValuer Types

@@ -27,8 +27,6 @@ giving every feature branch its own playground. No more "works on my machine"!`,
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() error {
 	return rootCmd.Execute()
 }
@@ -36,35 +34,27 @@ func Execute() error {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	// Persistent flags available to all commands
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ./eph.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug logging")
 
-	// Configure completion command
 	rootCmd.CompletionOptions.DisableDefaultCmd = false
 	rootCmd.SetHelpTemplate(helpTemplate())
 
-	// Register completion command
 	rootCmd.AddCommand(completionCmd)
 }
 
-// initConfig reads in config file and ENV variables if set
 func initConfig() {
 	if cfgFile != "" {
-		// Use config file from the flag
 		viper.SetConfigFile(cfgFile)
 	} else {
-		// Search for config in current directory with name "eph.yaml"
 		viper.AddConfigPath(".")
 		viper.SetConfigName("eph")
 		viper.SetConfigType("yaml")
 	}
 
-	// Read in environment variables that match
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("EPH")
 
-	// If a config file is found, read it in
 	if err := viper.ReadInConfig(); err == nil && debug {
 		fmt.Println("Using config file:", viper.ConfigFileUsed())
 	}
@@ -79,7 +69,6 @@ When in doubt, just eph it! 🚀
 `
 }
 
-// completionCmd represents the completion command
 var completionCmd = &cobra.Command{
 	Use:   "completion [bash|zsh|fish|powershell]",
 	Short: "Generate shell completion scripts",

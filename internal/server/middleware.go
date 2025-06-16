@@ -24,11 +24,9 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		wrapped := &responseWriter{ResponseWriter: w, status: 200}
 		next.ServeHTTP(wrapped, r)
 
-		// Extract request ID from context (set by requestIDMiddleware)
 		ctx := r.Context()
 		duration := time.Since(start)
 
-		// Log the completed request
 		log.Info(ctx, "HTTP request completed",
 			"method", r.Method,
 			"path", r.URL.Path,
@@ -41,19 +39,15 @@ func loggingMiddleware(next http.Handler) http.Handler {
 
 func requestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check if request ID was provided
 		requestID := r.Header.Get("X-Request-ID")
 		if requestID == "" {
 			requestID = uuid.New().String()
 		}
 
-		// Add to response header
 		w.Header().Set("X-Request-ID", requestID)
 
-		// Add to context for logging
 		ctx := log.WithRequestID(r.Context(), requestID)
 
-		// Log incoming request
 		log.Info(ctx, "HTTP request started",
 			"method", r.Method,
 			"path", r.URL.Path,

@@ -35,7 +35,6 @@ type PrettyHandler struct {
 	groups []string
 }
 
-// NewPrettyHandler creates a new pretty handler for development
 func NewPrettyHandler(out io.Writer, opts *slog.HandlerOptions) *PrettyHandler {
 	if opts == nil {
 		opts = &slog.HandlerOptions{}
@@ -46,7 +45,6 @@ func NewPrettyHandler(out io.Writer, opts *slog.HandlerOptions) *PrettyHandler {
 	}
 }
 
-// Enabled implements slog.Handler
 func (h *PrettyHandler) Enabled(_ context.Context, level slog.Level) bool {
 	minLevel := slog.LevelInfo
 	if h.opts.Level != nil {
@@ -55,7 +53,6 @@ func (h *PrettyHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= minLevel
 }
 
-// Handle implements slog.Handler
 func (h *PrettyHandler) Handle(_ context.Context, r slog.Record) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -109,7 +106,6 @@ func (h *PrettyHandler) Handle(_ context.Context, r slog.Record) error {
 	return err
 }
 
-// WithAttrs implements slog.Handler
 func (h *PrettyHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	newAttrs := make([]slog.Attr, len(h.attrs)+len(attrs))
 	copy(newAttrs, h.attrs)
@@ -122,7 +118,6 @@ func (h *PrettyHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 }
 
-// WithGroup implements slog.Handler
 func (h *PrettyHandler) WithGroup(name string) slog.Handler {
 	newGroups := make([]string, len(h.groups)+1)
 	copy(newGroups, h.groups)
@@ -135,25 +130,20 @@ func (h *PrettyHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-// formatAttr formats a single attribute with color coding
 func formatAttr(buf *bytes.Buffer, attr slog.Attr, groups []string) {
-	// Skip empty attributes
 	if attr.Equal(slog.Attr{}) {
 		return
 	}
 
-	// Handle special time attribute
 	if attr.Key == slog.TimeKey {
 		return // Already handled in main format
 	}
 
-	// Build full key with groups
 	key := attr.Key
 	if len(groups) > 0 {
 		key = strings.Join(groups, ".") + "." + key
 	}
 
-	// Format based on value type
 	switch v := attr.Value.Any().(type) {
 	case string:
 		if v != "" {
@@ -213,12 +203,10 @@ func formatAttr(buf *bytes.Buffer, attr slog.Attr, groups []string) {
 	}
 }
 
-// colorize adds ANSI color codes to text
 func colorize(text, color string) string {
 	return color + text + colorReset
 }
 
-// colorizeLevel returns colored level string
 func colorizeLevel(level slog.Level) string {
 	switch level {
 	case slog.LevelDebug:

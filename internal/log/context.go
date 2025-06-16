@@ -5,13 +5,10 @@ import (
 	"log/slog"
 )
 
-// contextKey is a type for context keys to avoid collisions
 type contextKey string
 
-// ContextKey represents a context key type for external use
 type ContextKey = contextKey
 
-// Context keys for common fields
 const (
 	environmentIDKey   contextKey = "environment_id"
 	environmentNameKey contextKey = "environment_name"
@@ -21,7 +18,6 @@ const (
 	providerKey        contextKey = "provider"
 	loggerKey          contextKey = "logger"
 
-	// Exported context keys for external use
 	RequestIDKey ContextKey = requestIDKey
 )
 

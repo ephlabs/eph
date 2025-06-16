@@ -26,8 +26,8 @@ func TestLogLevelParsing(t *testing.T) {
 		{"WARN", slog.LevelWarn},
 		{"error", slog.LevelError},
 		{"ERROR", slog.LevelError},
-		{"", slog.LevelInfo},        // default
-		{"invalid", slog.LevelInfo}, // default for invalid
+		{"", slog.LevelInfo},
+		{"invalid", slog.LevelInfo},
 	}
 
 	for _, tt := range tests {
@@ -41,7 +41,6 @@ func TestLogLevelParsing(t *testing.T) {
 }
 
 func TestJSONLogging(t *testing.T) {
-	// Save and restore environment
 	oldLevel := os.Getenv("LOG_LEVEL")
 	oldPretty := os.Getenv("LOG_PRETTY")
 	defer func() {
@@ -57,16 +56,12 @@ func TestJSONLogging(t *testing.T) {
 		Level: slog.LevelDebug,
 	}))
 
-	// Test basic logging
 	logger.Info("test message", "key", "value", "number", 42)
 
-	// Parse JSON output
 	var result map[string]interface{}
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("Failed to parse JSON output: %v", err)
 	}
-
-	// Verify fields
 	if result["msg"] != "test message" {
 		t.Errorf("Expected msg='test message', got %v", result["msg"])
 	}
@@ -202,27 +197,19 @@ func TestLogValuerTypes(t *testing.T) {
 	token := Token("super-secret-token")
 	logger.Info("token test", "token", token)
 
-	// Test Password redaction
-	password := Password("my-password-123")
-	logger.Info("password test", "password", password)
-
-	// Test Email partial redaction
-	email := Email("john.doe@example.com")
-	logger.Info("email test", "email", email)
-
 	// Test APIKey partial visibility
 	apiKey := APIKey("sk_test_1234567890abcdef")
 	logger.Info("api key test", "api_key", apiKey)
 
-	// Test User struct
-	user := User{
-		ID:       "user-123",
-		Name:     "John Doe",
-		Email:    Email("john@example.com"),
-		Password: Password("secret"),
-		Token:    Token("jwt-token"),
+	// Test Environment struct
+	env := Environment{
+		ID:       "env-123",
+		Name:     "test-env",
+		URL:      "https://test.example.com",
+		Provider: "kubernetes",
+		Token:    Token("secret-token"),
 	}
-	logger.Info("user test", "user", user)
+	logger.Info("environment test", "env", env)
 
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 
@@ -235,27 +222,9 @@ func TestLogValuerTypes(t *testing.T) {
 		t.Errorf("Expected token to be redacted, got %v", tokenResult["token"])
 	}
 
-	// Check password redaction
-	var pwResult map[string]interface{}
-	if err := json.Unmarshal([]byte(lines[1]), &pwResult); err != nil {
-		t.Fatalf("Failed to parse password JSON: %v", err)
-	}
-	if pwResult["password"] != "[REDACTED_PASSWORD]" {
-		t.Errorf("Expected password to be redacted, got %v", pwResult["password"])
-	}
-
-	// Check email partial redaction
-	var emailResult map[string]interface{}
-	if err := json.Unmarshal([]byte(lines[2]), &emailResult); err != nil {
-		t.Fatalf("Failed to parse email JSON: %v", err)
-	}
-	if emailResult["email"] != "j***@example.com" {
-		t.Errorf("Expected email to be partially redacted, got %v", emailResult["email"])
-	}
-
 	// Check API key partial visibility
 	var apiKeyResult map[string]interface{}
-	if err := json.Unmarshal([]byte(lines[3]), &apiKeyResult); err != nil {
+	if err := json.Unmarshal([]byte(lines[1]), &apiKeyResult); err != nil {
 		t.Fatalf("Failed to parse API key JSON: %v", err)
 	}
 	expectedKey := "sk_t...cdef"
@@ -263,23 +232,20 @@ func TestLogValuerTypes(t *testing.T) {
 		t.Errorf("Expected api_key='%s', got %v", expectedKey, apiKeyResult["api_key"])
 	}
 
-	// Check user struct - password and token should not appear
-	var userResult map[string]interface{}
-	if err := json.Unmarshal([]byte(lines[4]), &userResult); err != nil {
-		t.Fatalf("Failed to parse user JSON: %v", err)
+	// Check environment struct - token should not appear
+	var envResult map[string]interface{}
+	if err := json.Unmarshal([]byte(lines[2]), &envResult); err != nil {
+		t.Fatalf("Failed to parse environment JSON: %v", err)
 	}
-	userMap := userResult["user"].(map[string]interface{})
-	if userMap["id"] != "user-123" {
-		t.Errorf("Expected user.id='user-123', got %v", userMap["id"])
+	envMap := envResult["env"].(map[string]interface{})
+	if envMap["id"] != "env-123" {
+		t.Errorf("Expected env.id='env-123', got %v", envMap["id"])
 	}
-	if userMap["email"] != "j***@example.com" {
-		t.Errorf("Expected user.email to be partially redacted, got %v", userMap["email"])
+	if envMap["name"] != "test-env" {
+		t.Errorf("Expected env.name='test-env', got %v", envMap["name"])
 	}
-	if _, exists := userMap["password"]; exists {
-		t.Error("User password should not be logged")
-	}
-	if _, exists := userMap["token"]; exists {
-		t.Error("User token should not be logged")
+	if _, exists := envMap["token"]; exists {
+		t.Error("Environment token should not be logged")
 	}
 }
 
