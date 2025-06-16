@@ -21,36 +21,30 @@ const (
 	RequestIDKey ContextKey = requestIDKey
 )
 
-// WithEnvironment adds environment information to the context
 func WithEnvironment(ctx context.Context, envID, envName string) context.Context {
 	ctx = context.WithValue(ctx, environmentIDKey, envID)
 	ctx = context.WithValue(ctx, environmentNameKey, envName)
 	return ctx
 }
 
-// WithPR adds pull request information to the context
 func WithPR(ctx context.Context, repo string, prNumber int) context.Context {
 	ctx = context.WithValue(ctx, repositoryKey, repo)
 	ctx = context.WithValue(ctx, prNumberKey, prNumber)
 	return ctx
 }
 
-// WithRequestID adds a request ID to the context
 func WithRequestID(ctx context.Context, requestID string) context.Context {
 	return context.WithValue(ctx, requestIDKey, requestID)
 }
 
-// WithProvider adds the infrastructure provider name to the context
 func WithProvider(ctx context.Context, provider string) context.Context {
 	return context.WithValue(ctx, providerKey, provider)
 }
 
-// WithLogger adds a logger to the context
 func WithLogger(ctx context.Context, logger *slog.Logger) context.Context {
 	return context.WithValue(ctx, loggerKey, logger)
 }
 
-// FromContext extracts the logger from context, creating one with context values if needed
 func FromContext(ctx context.Context) *slog.Logger {
 	// Check if there's already a logger in the context
 	if logger, ok := ctx.Value(loggerKey).(*slog.Logger); ok {
@@ -61,7 +55,6 @@ func FromContext(ctx context.Context) *slog.Logger {
 	return enrichLogger(ctx, Default())
 }
 
-// enrichLogger adds context values to the logger
 func enrichLogger(ctx context.Context, logger *slog.Logger) *slog.Logger {
 	var attrs []any
 
@@ -98,24 +91,18 @@ func enrichLogger(ctx context.Context, logger *slog.Logger) *slog.Logger {
 	return logger
 }
 
-// Helper functions that extract logger from context and log
-
-// Info logs at info level using logger from context
 func Info(ctx context.Context, msg string, args ...any) {
 	FromContext(ctx).InfoContext(ctx, msg, args...)
 }
 
-// Debug logs at debug level using logger from context
 func Debug(ctx context.Context, msg string, args ...any) {
 	FromContext(ctx).DebugContext(ctx, msg, args...)
 }
 
-// Warn logs at warn level using logger from context
 func Warn(ctx context.Context, msg string, args ...any) {
 	FromContext(ctx).WarnContext(ctx, msg, args...)
 }
 
-// Error logs at error level using logger from context
 func Error(ctx context.Context, msg string, args ...any) {
 	FromContext(ctx).ErrorContext(ctx, msg, args...)
 }
