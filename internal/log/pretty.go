@@ -30,20 +30,24 @@ const (
 
 // PrettyHandler implements slog.Handler for colored console output
 type PrettyHandler struct {
-	opts   *slog.HandlerOptions
-	out    io.Writer
-	mu     sync.Mutex
-	attrs  []slog.Attr
-	groups []string
+	opts       *slog.HandlerOptions
+	out        io.Writer
+	mu         sync.Mutex
+	attrs      []slog.Attr
+	groups     []string
+	workingDir string
 }
 
 func NewPrettyHandler(out io.Writer, opts *slog.HandlerOptions) *PrettyHandler {
 	if opts == nil {
 		opts = &slog.HandlerOptions{}
 	}
+
+	wd, _ := os.Getwd()
 	return &PrettyHandler{
-		opts: opts,
-		out:  out,
+		opts:       opts,
+		out:        out,
+		workingDir: wd,
 	}
 }
 
