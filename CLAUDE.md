@@ -198,6 +198,35 @@ The project is in pre-MVP phase with:
 
 ## Development Guidelines
 
+### Test-Driven Development (TDD)
+
+The Eph project follows strict TDD practices for all new development:
+
+1. **Tests First, Always** - Write failing tests that define expected behavior before writing any implementation code
+
+2. **Red-Green-Refactor Cycle**:
+   - **Red**: Write tests that fail (defining the contract)
+   - **Green**: Write minimal code to make tests pass
+   - **Refactor**: Only when needed, not as a mandatory step
+
+3. **Coverage Target: 80-90%** - Not 100%, which can lead to:
+   - Unnecessary dependency injection
+   - Unreadable tests
+   - Inverted implementations
+   - Focus on coverage metrics over code quality
+
+4. **One Issue = Complete TDD Cycle** - Each GitHub issue should include:
+   - Writing failing tests
+   - Implementation to make tests green
+   - Refactoring as needed
+   - All in one PR that resolves the issue
+
+5. **Tests as Documentation** - Tests should clearly document expected behavior and serve as living examples
+
+6. **Incremental Progress** - Small, focused issues that build on each other, each delivering working functionality
+
+This approach ensures high quality code from the start, clear specifications through tests, prevents over-engineering, and makes PRs easier to review.
+
 ### Library Usage and Documentation
 
 When using Go standard library or third-party packages:
@@ -233,4 +262,4 @@ When using Go standard library or third-party packages:
 - We use ripgrep, grep is aliased to ripgrep so grep and rg are the same command, always use the arguments for ripgrep.
 - Errors should never be assigned to _ or otherwise swallowed by the application and instead should be passed up or handled
 - do not add comments that could be inferred from variable or function names. Prefer code that reads rather than including comments
-```
+- commit descriptions should be as concise as possible
