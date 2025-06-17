@@ -1,53 +1,144 @@
 package server
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/ephlabs/eph/internal/log"
 )
 
 func TestLoggingMiddleware(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusCreated)
-		if _, err := w.Write([]byte("test")); err != nil {
-			t.Errorf("failed to write response: %v", err)
+	t.Run("basic functionality", func(t *testing.T) {
+		handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			if _, err := w.Write([]byte("test")); err != nil {
+				t.Errorf("failed to write response: %v", err)
+			}
+		})
+
+		wrapped := loggingMiddleware(handler)
+
+		req := httptest.NewRequest("GET", "/test", nil)
+		w := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, w.Code)
 		}
 	})
 
-	wrapped := loggingMiddleware(handler)
+	t.Run("structured logging with context", func(t *testing.T) {
+		// Capture logs
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{}))
+		log.SetDefault(logger)
 
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
+		handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+		})
 
-	wrapped.ServeHTTP(w, req)
+		wrapped := loggingMiddleware(handler)
 
-	if w.Code != http.StatusCreated {
-		t.Errorf("expected status %d, got %d", http.StatusCreated, w.Code)
-	}
+		// Create request with context that has request ID
+		req := httptest.NewRequest("POST", "/api/environments", nil)
+		ctx := log.WithRequestID(req.Context(), "test-123")
+		req = req.WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(w, req)
+
+		// This test will fail until we implement structured logging
+		logOutput := strings.TrimSpace(buf.String())
+		if logOutput == "" {
+			t.Fatal("Expected structured logs to be written")
+		}
+
+		// Parse the log entry
+		var logEntry map[string]interface{}
+		if err := json.Unmarshal([]byte(logOutput), &logEntry); err != nil {
+			t.Fatalf("Failed to parse log JSON: %v", err)
+		}
+
+		// Verify structured log fields
+		expectedFields := map[string]interface{}{
+			"msg":        "HTTP request completed",
+			"method":     "POST",
+			"path":       "/api/environments",
+			"status":     float64(201),
+			"request_id": "test-123",
+		}
+
+		for key, expected := range expectedFields {
+			if actual := logEntry[key]; actual != expected {
+				t.Errorf("Expected %s=%v, got %v", key, expected, actual)
+			}
+		}
+
+		// Verify duration field exists and is reasonable
+		if duration, ok := logEntry["duration"]; !ok {
+			t.Error("Expected duration field in log")
+		} else if _, ok := duration.(float64); !ok {
+			t.Errorf("Expected duration to be a number, got %T", duration)
+		}
+	})
 }
 
 func TestRequestIDMiddleware(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	// Capture context from handler
+	var capturedCtx context.Context
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedCtx = r.Context()
 		w.WriteHeader(http.StatusOK)
 	})
 
 	wrapped := requestIDMiddleware(handler)
 
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
+	t.Run("generates request ID when not provided", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test", nil)
+		w := httptest.NewRecorder()
 
-	wrapped.ServeHTTP(w, req)
+		wrapped.ServeHTTP(w, req)
 
-	requestID := w.Header().Get("X-Request-ID")
-	if requestID == "" {
-		t.Error("expected request ID header to be set")
-	}
+		requestID := w.Header().Get("X-Request-ID")
+		if requestID == "" {
+			t.Error("expected request ID header to be set")
+		}
 
-	// Verify it's a valid UUID format
-	if len(requestID) != 36 || !strings.Contains(requestID, "-") {
-		t.Errorf("expected valid UUID format, got %s", requestID)
-	}
+		// Verify it's a valid UUID format
+		if len(requestID) != 36 || !strings.Contains(requestID, "-") {
+			t.Errorf("expected valid UUID format, got %s", requestID)
+		}
+
+		// Test context integration - this will fail until we implement it
+		if capturedCtx.Value(log.RequestIDKey) != requestID {
+			t.Errorf("expected request ID in context to be %s, got %v", requestID, capturedCtx.Value(log.RequestIDKey))
+		}
+	})
+
+	t.Run("uses provided request ID", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test", nil)
+		req.Header.Set("X-Request-ID", "test-request-id")
+		w := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(w, req)
+
+		requestID := w.Header().Get("X-Request-ID")
+		if requestID != "test-request-id" {
+			t.Errorf("expected X-Request-ID to be 'test-request-id', got %s", requestID)
+		}
+
+		// Test context integration
+		if capturedCtx.Value(log.RequestIDKey) != "test-request-id" {
+			t.Error("expected request ID in context to be 'test-request-id'")
+		}
+	})
 }
 
 func TestCORSMiddlewareAllMethods(t *testing.T) {

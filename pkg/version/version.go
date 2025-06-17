@@ -17,7 +17,6 @@ var BuildDate = "unknown"
 // GoVersion holds the Go runtime version.
 var GoVersion = runtime.Version()
 
-// GetVersion returns the current version of the application.
 func GetVersion() string {
 	return Version
 }

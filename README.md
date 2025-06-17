@@ -190,9 +190,10 @@ eph/
 │   ├── cli/               # CLI command implementation
 │   ├── api/               # API client/server shared code
 │   ├── config/            # Configuration parsing and validation
-│   ├── controller/        # Environment reconciliation logic (stateless)
-│   ├── reconciler/        # Core reconciliation loop implementation
+│   ├── controller/        # Environment business logic and orchestration
+│   ├── reconciler/        # Core reconciliation loop engine
 │   ├── informers/         # GitHub and Kubernetes informers (cache external state)
+│   ├── log/               # Structured logging utilities
 │   ├── providers/         # Provider implementations
 │   │   ├── interface.go   # Provider interface
 │   │   └── kubernetes/    # Kubernetes provider
@@ -205,6 +206,7 @@ eph/
 ├── api/                   # API definitions and documentation
 │   ├── openapi.yaml       # OpenAPI specification
 │   └── schemas/           # JSON schemas
+├── .github/               # GitHub Actions workflows and templates
 └── docs/                  # Documentation
 ```
 

@@ -1,15 +1,21 @@
 package main
 
 import (
-	"log"
+	"context"
+	"os"
 
+	"github.com/ephlabs/eph/internal/log"
 	"github.com/ephlabs/eph/internal/server"
 )
 
 func main() {
-	log.Println("Starting Eph Daemon - What the eph?")
+	logger := log.New()
+	log.SetDefault(logger)
+
+	log.Info(context.Background(), "Starting Eph Daemon - What the eph?")
 
 	if err := server.Run(); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+		log.Error(context.Background(), "Server failed to start", "error", err)
+		os.Exit(1)
 	}
 }

@@ -1,12 +1,13 @@
 package server
 
 import (
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/ephlabs/eph/internal/log"
 )
 
 func (s *Server) applyMiddleware(handler http.Handler) http.Handler {
@@ -23,16 +24,36 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		wrapped := &responseWriter{ResponseWriter: w, status: 200}
 		next.ServeHTTP(wrapped, r)
 
-		log.Printf("%s %s %d %v",
-			r.Method, r.URL.Path, wrapped.status, time.Since(start))
+		ctx := r.Context()
+		duration := time.Since(start)
+
+		log.Info(ctx, "HTTP request completed",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", wrapped.status,
+			"duration", duration,
+			"remote_addr", r.RemoteAddr,
+			"user_agent", r.UserAgent())
 	})
 }
 
 func requestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := uuid.New().String()
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = uuid.New().String()
+		}
+
 		w.Header().Set("X-Request-ID", requestID)
-		next.ServeHTTP(w, r)
+
+		ctx := log.WithRequestID(r.Context(), requestID)
+
+		log.Info(ctx, "HTTP request started",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"remote_addr", r.RemoteAddr)
+
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -61,7 +82,11 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("Panic recovered: %v", err)
+				log.Error(r.Context(), "Panic recovered",
+					"panic", err,
+					"method", r.Method,
+					"path", r.URL.Path,
+					"remote_addr", r.RemoteAddr)
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			}
 		}()

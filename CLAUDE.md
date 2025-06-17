@@ -12,17 +12,19 @@ eph/
 │   └── ephd/              # Daemon binary
 │       └── main.go
 ├── internal/              # Private application code
-│   ├── api/               # API definitions
-│   ├── cli/               # CLI command implementations
-│   ├── config/            # Configuration management
-│   ├── controller/        # Environment orchestration logic
+│   ├── server/            # HTTP server implementation
+│   ├── cli/               # CLI command implementation
+│   ├── api/               # API client/server shared code
+│   ├── config/            # Configuration parsing and validation
+│   ├── controller/        # Environment business logic and orchestration
+│   ├── reconciler/        # Core reconciliation loop engine
+│   ├── informers/         # GitHub and Kubernetes informers (cache external state)
 │   ├── log/               # Logging utilities
-│   ├── migrate/           # Database migrations
-│   ├── providers/         # Infrastructure provider implementations
+│   ├── providers/         # Provider implementations
+│   │   ├── interface.go   # Provider interface
 │   │   └── kubernetes/    # Kubernetes provider
-│   ├── server/            # HTTP API server
 │   ├── state/             # Event logging (not authoritative state)
-│   ├── webhook/           # Git provider webhook handlers
+│   ├── webhook/           # Git webhook handlers
 │   └── worker/            # Background reconciliation loops
 ├── pkg/                   # Public library code
 │   └── version/           # Version information
@@ -30,6 +32,7 @@ eph/
 ├── migrations/            # Database migration files
 ├── scripts/               # Build and deployment scripts
 ├── web/                   # Web UI assets (future)
+├── .github/               # GitHub Actions workflows and templates
 └── docs/                  # Documentation
 ```
 
@@ -223,3 +226,11 @@ When using Go standard library or third-party packages:
 - Commands stubbed: up, down, list, logs, auth
 - Security scanning and linting configured
 - Branch protection rules enforced
+
+## Memories
+
+- **ephlabs/eph**: The primary repository for the Eph environment orchestration project, focusing on creating ephemeral environments for pull request workflows
+- We use ripgrep, grep is aliased to ripgrep so grep and rg are the same command, always use the arguments for ripgrep.
+- Errors should never be assigned to _ or otherwise swallowed by the application and instead should be passed up or handled
+- do not add comments that could be inferred from variable or function names. Prefer code that reads rather than including comments
+```

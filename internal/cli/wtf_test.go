@@ -11,19 +11,16 @@ import (
 )
 
 func TestWtfCommand(t *testing.T) {
-	// Save and restore stdout
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	// Execute the command
 	rootCmd.SetArgs([]string{"wtf"})
 	err := rootCmd.Execute()
 	if err != nil {
 		t.Errorf("wtf command failed: %v", err)
 	}
 
-	// Restore stdout and capture output
 	w.Close()
 	os.Stdout = oldStdout
 

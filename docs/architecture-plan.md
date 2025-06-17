@@ -192,16 +192,20 @@ eph/
 │   │   ├── version.go   # Version command
 │   │   ├── wtf.go       # Diagnostic command
 │   │   └── *_test.go    # CLI tests
+│   ├── server/          # HTTP server implementation
+│   ├── cli/             # CLI command implementation
 │   ├── api/             # API client/server shared code
 │   ├── config/          # Configuration parsing and validation
-│   ├── controller/      # Environment orchestration logic
+│   ├── controller/      # Environment business logic and orchestration
+│   ├── reconciler/      # Core reconciliation loop engine
+│   ├── informers/       # GitHub and Kubernetes informers (cache external state)
 │   ├── log/             # Logging utilities
-│   ├── migrate/         # Database migration logic
 │   ├── providers/       # Provider implementations
+│   │   ├── interface.go # Provider interface
 │   │   └── kubernetes/  # Kubernetes provider
-│   ├── state/           # Database state management
+│   ├── state/           # Event logging (not authoritative state)
 │   ├── webhook/         # Git webhook handlers
-│   └── worker/          # Background job processing
+│   └── worker/          # Background reconciliation loops
 ├── pkg/                 # Exportable packages (use sparingly)
 │   └── version/         # Version information
 │       ├── version.go   # Version constants and variables
@@ -229,6 +233,24 @@ eph/
 - Cannot be imported by external projects (compiler enforced)
 - Fully testable with unit and integration tests
 - Shared between multiple binaries in the same project
+
+**Key `internal/` package distinctions**:
+- **`controller/`**: Environment business logic and orchestration (what should happen)
+  - Contains domain-specific logic for managing environments
+  - Makes decisions about desired state vs actual state
+  - Orchestrates operations across multiple providers/resources
+  - Stateless - no persistent state, only business rules
+
+- **`reconciler/`**: Core reconciliation loop engine (how reconciliation works)
+  - Implements the generic reconciliation control loop (every 30s)
+  - Handles reconciliation mechanics, timing, and error handling
+  - Coordinates between informers and controllers
+  - Reusable across different resource types
+
+- **`informers/`**: External state caching and watching
+  - Cache current state from GitHub (PRs, labels) and Kubernetes (deployments, services)
+  - Provide efficient access to external state without constant API calls
+  - Detect changes and trigger reconciliation events
 
 **`pkg/` packages**:
 - Exportable packages safe for external use
@@ -1381,16 +1403,20 @@ eph/
 │   ├── eph/              # CLI binary entry point
 │   └── ephd/             # Server daemon entry point
 ├── internal/             # Private application code
-│   ├── api/              # HTTP API client/server shared code
-│   ├── cli/              # CLI command implementations
-│   ├── config/           # Configuration parsing
-│   ├── controller/       # Environment orchestration
-│   ├── providers/        # Provider implementations
-│   │   └── kubernetes/
 │   ├── server/           # HTTP server implementation
-│   ├── state/            # PostgreSQL state management
+│   ├── cli/              # CLI command implementation
+│   ├── api/              # HTTP API client/server shared code
+│   ├── config/           # Configuration parsing and validation
+│   ├── controller/       # Environment business logic and orchestration
+│   ├── reconciler/       # Core reconciliation loop engine
+│   ├── informers/        # GitHub and Kubernetes informers (cache external state)
+│   ├── log/              # Logging utilities
+│   ├── providers/        # Provider implementations
+│   │   ├── interface.go  # Provider interface
+│   │   └── kubernetes/   # Kubernetes provider
+│   ├── state/            # Event logging (not authoritative state)
 │   ├── webhook/          # Git webhook handlers
-│   └── worker/           # Background job processing
+│   └── worker/           # Background reconciliation loops
 ├── pkg/
 │   └── version/          # Exportable version information
 ├── web/                  # Web dashboard (React)
