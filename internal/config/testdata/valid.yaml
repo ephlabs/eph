@@ -1,0 +1,6 @@
+version: "1.0"
+name: test-project
+environments:
+  - name: dev
+    provider: kubernetes
+    namespace: dev-namespace

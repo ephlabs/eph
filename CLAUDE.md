@@ -233,4 +233,5 @@ When using Go standard library or third-party packages:
 - We use ripgrep, grep is aliased to ripgrep so grep and rg are the same command, always use the arguments for ripgrep.
 - Errors should never be assigned to _ or otherwise swallowed by the application and instead should be passed up or handled
 - do not add comments that could be inferred from variable or function names. Prefer code that reads rather than including comments
-```
+- never use no-verify, always lint and test before committing
+- before commiting you need to run tests and lint
