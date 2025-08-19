@@ -29,7 +29,7 @@ func readYAMLFile(path string) (any, error) {
 
 	// if the file is empty but syntactically valid, return an error
 	if out == nil {
-		return nil, errors.New("failed to parse yaml")
+		return nil, errors.New("yaml file contains no data (empty or comments-only)")
 	}
 
 	return out, nil
