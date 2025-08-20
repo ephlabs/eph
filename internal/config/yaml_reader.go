@@ -3,15 +3,35 @@ package config
 import (
 	"errors"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+)
+
+const defaultConfigFile = "eph.yaml"
+
+var (
+	// Feature flag: if false, the function will default to using ./eph.yaml
+	AllowCustomConfigPath = false
 )
 
 // readYAMLFile reads a YAML file at the given path
 // and unmarshals it into a generic map[string]interface{}.
 func readYAMLFile(path string) (any, error) {
+	var filePath string
+	if AllowCustomConfigPath && len(path) > 0 && path != "" {
+		filePath = path
+	} else {
+		// Default to toplevel `eph.yaml`
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		filePath = filepath.Join(cwd, defaultConfigFile)
+	}
+
 	// Read file into memory
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
