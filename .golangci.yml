@@ -2,8 +2,6 @@ version: "2"
 run:
   timeout: 5m
   tests: true
-  skip-dirs:
-    - "testdata"
 linters:
   enable:
     - bodyclose
@@ -25,6 +23,7 @@ linters:
       - third_party$
       - builtin$
       - examples$
+      - testdata$
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
@@ -37,3 +36,4 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+      - testdata$
