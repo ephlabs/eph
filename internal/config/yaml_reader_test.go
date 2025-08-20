@@ -34,7 +34,7 @@ func TestCanReadYAMLFile(t *testing.T) {
 	assert.Equal(t, "TestData", yamlMap["name"])
 	assert.Equal(t, 1.0, yamlMap["version"])
 	assert.Equal(t, true, yamlMap["enabled"])
-	assert.Equal(t, int(100), yamlMap["max_users"])
+	assert.Equal(t, 100, yamlMap["max_users"])
 
 	features := yamlMap["features"].(map[string]any)
 	assert.Equal(t, true, features["authentication"])
@@ -45,7 +45,7 @@ func TestCanReadYAMLFile(t *testing.T) {
 
 	database := yamlMap["database"].(map[string]any)
 	assert.Equal(t, "localhost", database["host"])
-	assert.Equal(t, int(1234), database["port"])
+	assert.Equal(t, 1234, database["port"])
 }
 
 // also handles when given a path to a dir rather than a file
