@@ -31,7 +31,7 @@ func readYAMLFile(path string) (any, error) {
 	}
 
 	// Read file into memory
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filePath) /* #nosec G304 user input for filepath is ok for yaml config */
 	if err != nil {
 		return nil, err
 	}
