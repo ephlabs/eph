@@ -17,5 +17,6 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        exclude: ^.*testdata/.*\.ya?ml$
       - id: check-added-large-files
       - id: check-merge-conflict

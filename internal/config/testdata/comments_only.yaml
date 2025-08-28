@@ -1,0 +1,14 @@
+# name: TestData
+# version: 1.0
+# enabled: true
+# max_users: 100
+# features:
+#   authentication: true
+#   logging:
+#     level: info
+#     destinations:
+#       - file
+#       - console
+# database:
+#   host: localhost
+#   port: 1234
